@@ -1,11 +1,15 @@
 package inits
 
 import (
+	_ "embed"
+	"fmt"
 	"nav-rain-grid-go/domains"
 	"nav-rain-grid-go/mqtt"
 	"nav-rain-grid-go/routers"
 	scheduleds2 "nav-rain-grid-go/scheduleds"
+	"nav-rain-grid-go/utils"
 	"nav-rain-grid-go/webs"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -13,7 +17,14 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/scheduleds"
 )
 
+//go:embed config.yaml
+var defaultConfig []byte
+
 func Init() {
+	if err := utils.NewDefaultConfigManager(defaultConfig).Ensure(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "prepare config failed: %v\n", err)
+		os.Exit(1)
+	}
 	sysInit := inits.SysInit{}
 	sysInit.OnTableInit(func() {
 		domains.RegisterTables()
