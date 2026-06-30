@@ -2,13 +2,14 @@ package mqtt
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"nav-rain-grid-go/configs"
+	"strings"
 	"sync"
 	"time"
 
 	mqttserver "github.com/mochi-mqtt/server/v2"
-	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/wfu-work/nav-common-go-lib/global"
@@ -73,7 +74,7 @@ func (s *BrokerService) Start() error {
 	}
 
 	server := mqttserver.New(nil)
-	if err := server.AddHook(new(auth.AllowHook), nil); err != nil {
+	if err := server.AddHook(new(authHook), nil); err != nil {
 		return fmt.Errorf("添加MQTT认证hook失败: %w", err)
 	}
 	if err := server.AddHook(new(receiveHook), &receiveHookOptions{service: s}); err != nil {
@@ -215,6 +216,55 @@ func loadConfig() configs.MqttConfig {
 
 type receiveHookOptions struct {
 	service *BrokerService
+}
+
+type authHook struct {
+	mqttserver.HookBase
+}
+
+func (h *authHook) ID() string {
+	return "nav-rain-mqtt-auth"
+}
+
+func (h *authHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{
+		mqttserver.OnConnectAuthenticate,
+		mqttserver.OnACLCheck,
+	}, []byte{b})
+}
+
+func (h *authHook) OnConnectAuthenticate(cl *mqttserver.Client, pk packets.Packet) bool {
+	username := strings.TrimSpace(string(pk.Connect.Username))
+	password := strings.TrimSpace(string(pk.Connect.Password))
+	if validDeviceCredential(username, password) {
+		return true
+	}
+
+	clientID := ""
+	if cl != nil {
+		clientID = cl.ID
+	}
+	if clientID == "" {
+		clientID = pk.Connect.ClientIdentifier
+	}
+	zap.L().Warn("MQTT客户端认证失败",
+		zap.String("clientID", clientID),
+		zap.String("username", username),
+	)
+	return false
+}
+
+func (h *authHook) OnACLCheck(cl *mqttserver.Client, topic string, write bool) bool {
+	return true
+}
+
+func validDeviceCredential(username string, password string) bool {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	if username == "" || password == "" {
+		return false
+	}
+	return password == username || password == base64.StdEncoding.EncodeToString([]byte(username))
 }
 
 type receiveHook struct {
