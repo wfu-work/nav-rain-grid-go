@@ -2,7 +2,7 @@ package configs
 
 import "strconv"
 
-const DefaultPort = 1883
+const DefaultMqttPort = 1883
 
 type MqttConfig struct {
 	Enable bool   `mapstructure:"enable" json:"enable" yaml:"enable"`
@@ -12,7 +12,7 @@ type MqttConfig struct {
 
 func (c MqttConfig) Address() string {
 	if c.Port == 0 {
-		c.Port = DefaultPort
+		c.Port = DefaultMqttPort
 	}
 	if c.Host == "" {
 		return ":" + strconv.Itoa(c.Port)

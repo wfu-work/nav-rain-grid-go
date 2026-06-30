@@ -10,12 +10,18 @@ var RouterGroupApp = new(RouterGroup)
 
 type RouterGroup struct {
 	ConfigRouter
+	PredictRouter
+	DeviceRouter
 }
 
 var (
-	configApi = apis.ApiGroupApp.ConfigApi
+	configApi  = apis.ApiGroupApp.ConfigApi
+	predictApi = apis.ApiGroupApp.PredictApi
+	deviceApi  = apis.ApiGroupApp.DeviceApi
 )
 
 func AppRouterInit(publicGroup *gin.RouterGroup, privateGroup *gin.RouterGroup) {
 	RouterGroupApp.InitConfigRouter(privateGroup, publicGroup)
+	RouterGroupApp.InitPredictRouter(privateGroup)
+	RouterGroupApp.InitDeviceRouter(privateGroup)
 }

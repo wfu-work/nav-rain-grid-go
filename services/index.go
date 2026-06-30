@@ -8,6 +8,8 @@ var ServiceGroupApp = new(ServiceGroup)
 
 type ServiceGroup struct {
 	ConfigService
+	PredictService
+	DeviceService
 }
 
 type HasBaseData interface {

@@ -15,7 +15,12 @@ type AppConfig struct {
 	MqttConfig MqttConfig `mapstructure:"mqtt" json:"mqtt" yaml:"mqtt"`
 }
 
-var App = NewAppConfig()
+var App = AppConfig{
+	MqttConfig: MqttConfig{
+		Enable: true,
+		Port:   DefaultMqttPort,
+	},
+}
 
 func NewAppConfig() AppConfig {
 	v := viper.New()

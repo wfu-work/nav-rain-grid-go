@@ -12,6 +12,8 @@ func RegisterTables() {
 	db := global.NAV_DB
 	err := db.AutoMigrate(
 		Config{},
+		Predict{},
+		Device{},
 	)
 	if err != nil {
 		global.NAV_LOG.Error("register business table failed", zap.Error(err))

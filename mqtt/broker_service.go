@@ -25,6 +25,14 @@ type BrokerService struct {
 	handlers []MessageHandler
 }
 
+func InitMqtt() {
+	RegisterDeviceHeartbeatHandler()
+	RegisterPredictHandler()
+	if err := BrokerServiceApp.Start(); err != nil {
+		panic(err)
+	}
+}
+
 func (s *BrokerService) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -93,9 +101,9 @@ func (s *BrokerService) serve(server *mqttserver.Server) {
 	}
 }
 
-func (s *BrokerService) receive(clientID string, topic string, payload []byte) {
+func (s *BrokerService) receive(clientId string, topic string, payload []byte) {
 	zap.L().Info("收到MQTT消息",
-		zap.String("clientID", clientID),
+		zap.String("clientID", clientId),
 		zap.String("topic", topic),
 		zap.Int("payloadSize", len(payload)),
 	)
@@ -105,14 +113,14 @@ func (s *BrokerService) receive(clientID string, topic string, payload []byte) {
 	s.mu.RUnlock()
 
 	for _, handler := range handlers {
-		handler(clientID, topic, payload)
+		handler(clientId, topic, payload)
 	}
 }
 
 func loadConfig() configs.MqttConfig {
 	cfg := configs.MqttConfig{
 		Enable: true,
-		Port:   configs.DefaultPort,
+		Port:   configs.DefaultMqttPort,
 	}
 	if global.NAV_VIPER == nil {
 		return cfg
@@ -124,11 +132,11 @@ func loadConfig() configs.MqttConfig {
 		zap.L().Error("解析MQTT配置失败, 使用默认配置", zap.Error(err))
 		return configs.MqttConfig{
 			Enable: true,
-			Port:   configs.DefaultPort,
+			Port:   configs.DefaultMqttPort,
 		}
 	}
 	if cfg.Port == 0 {
-		cfg.Port = configs.DefaultPort
+		cfg.Port = configs.DefaultMqttPort
 	}
 	return cfg
 }
@@ -142,7 +150,7 @@ type receiveHook struct {
 	service *BrokerService
 }
 
-func (h *receiveHook) Id() string {
+func (h *receiveHook) ID() string {
 	return "nav-rain-mqtt-receive"
 }
 
@@ -160,10 +168,10 @@ func (h *receiveHook) Init(config any) error {
 }
 
 func (h *receiveHook) OnPublish(cl *mqttserver.Client, pk packets.Packet) (packets.Packet, error) {
-	clientID := ""
+	clientId := ""
 	if cl != nil {
-		clientID = cl.ID
+		clientId = cl.ID
 	}
-	h.service.receive(clientID, pk.TopicName, pk.Payload)
+	h.service.receive(clientId, pk.TopicName, pk.Payload)
 	return pk, nil
 }

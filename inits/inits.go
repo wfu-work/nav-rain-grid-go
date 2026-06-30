@@ -21,9 +21,7 @@ func Init() {
 		routers.AppRouterInit(publicGroup, privateGroup)
 	})
 	sysInit.OnOtherInit(func() {
-		if err := mqtt.BrokerServiceApp.Start(); err != nil {
-			panic(err)
-		}
+		mqtt.InitMqtt()
 	})
 	sysInit.OnScheInit(func(timers scheduleds.Timer, options []cron.Option) {
 
