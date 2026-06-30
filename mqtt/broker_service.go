@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"nav-rain-grid-go/configs"
 	"sync"
+	"time"
 
 	mqttserver "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
@@ -19,10 +20,34 @@ var BrokerServiceApp = new(BrokerService)
 type MessageHandler func(clientID string, topic string, payload []byte)
 
 type BrokerService struct {
-	mu       sync.RWMutex
-	server   *mqttserver.Server
-	config   configs.MqttConfig
-	handlers []MessageHandler
+	mu              sync.RWMutex
+	server          *mqttserver.Server
+	config          configs.MqttConfig
+	startedAt       time.Time
+	totalMessages   uint64
+	lastMessageAt   int64
+	lastClientID    string
+	lastTopic       string
+	lastPayloadSize int
+	handlers        []MessageHandler
+}
+
+type BrokerMonitorInfo struct {
+	Enable          bool     `json:"enable"`
+	Running         bool     `json:"running"`
+	Host            string   `json:"host"`
+	Port            int      `json:"port"`
+	Address         string   `json:"address"`
+	HandlerCount    int      `json:"handlerCount"`
+	TotalMessages   uint64   `json:"totalMessages"`
+	LastMessageAt   int64    `json:"lastMessageAt"`
+	LastClientID    string   `json:"lastClientId"`
+	LastTopic       string   `json:"lastTopic"`
+	LastPayloadSize int      `json:"lastPayloadSize"`
+	StartedAt       int64    `json:"startedAt"`
+	UptimeSeconds   int64    `json:"uptimeSeconds"`
+	Warnings        []string `json:"warnings"`
+	CheckedAt       int64    `json:"checkedAt"`
 }
 
 func InitMqtt() {
@@ -65,6 +90,7 @@ func (s *BrokerService) Start() error {
 
 	s.server = server
 	s.config = cfg
+	s.startedAt = time.Now()
 
 	go s.serve(server)
 	zap.L().Info("MQTT服务端已启动", zap.String("address", cfg.Address()))
@@ -82,6 +108,7 @@ func (s *BrokerService) Stop() {
 		zap.L().Error("MQTT服务端关闭失败", zap.Error(err))
 	}
 	s.server = nil
+	s.startedAt = time.Time{}
 	zap.L().Info("MQTT服务端已关闭")
 }
 
@@ -108,13 +135,58 @@ func (s *BrokerService) receive(clientId string, topic string, payload []byte) {
 		zap.Int("payloadSize", len(payload)),
 	)
 
-	s.mu.RLock()
+	s.mu.Lock()
+	s.totalMessages++
+	s.lastMessageAt = time.Now().UnixMilli()
+	s.lastClientID = clientId
+	s.lastTopic = topic
+	s.lastPayloadSize = len(payload)
 	handlers := append([]MessageHandler(nil), s.handlers...)
-	s.mu.RUnlock()
+	s.mu.Unlock()
 
 	for _, handler := range handlers {
 		handler(clientId, topic, payload)
 	}
+}
+
+func (s *BrokerService) Status() BrokerMonitorInfo {
+	s.mu.RLock()
+	cfg := s.config
+	running := s.server != nil
+	startedAt := s.startedAt
+	info := BrokerMonitorInfo{
+		Running:         running,
+		HandlerCount:    len(s.handlers),
+		TotalMessages:   s.totalMessages,
+		LastMessageAt:   s.lastMessageAt,
+		LastClientID:    s.lastClientID,
+		LastTopic:       s.lastTopic,
+		LastPayloadSize: s.lastPayloadSize,
+		Warnings:        make([]string, 0),
+		CheckedAt:       time.Now().UnixMilli(),
+	}
+	s.mu.RUnlock()
+
+	if cfg.Port == 0 {
+		cfg = loadConfig()
+	}
+	info.Enable = cfg.Enable
+	info.Host = cfg.Host
+	info.Port = cfg.Port
+	info.Address = cfg.Address()
+	if running && !startedAt.IsZero() {
+		info.StartedAt = startedAt.UnixMilli()
+		info.UptimeSeconds = int64(time.Since(startedAt).Seconds())
+	}
+	if !info.Enable {
+		info.Warnings = append(info.Warnings, "MQTT 服务未启用")
+	} else if !info.Running {
+		info.Warnings = append(info.Warnings, "MQTT 服务未运行")
+	}
+	if info.HandlerCount == 0 {
+		info.Warnings = append(info.Warnings, "未注册 MQTT 消息处理器")
+	}
+	return info
 }
 
 func loadConfig() configs.MqttConfig {

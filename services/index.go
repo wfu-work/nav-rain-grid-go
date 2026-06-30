@@ -11,6 +11,7 @@ type ServiceGroup struct {
 	PredictService
 	DeviceService
 	GridService
+	SystemMonitorService
 }
 
 type HasBaseData interface {

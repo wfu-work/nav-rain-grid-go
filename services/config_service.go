@@ -1,11 +1,13 @@
 package services
 
 import (
+	"errors"
 	"log"
 	"nav-rain-grid-go/domains"
 
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/services"
+	"gorm.io/gorm"
 )
 
 type ConfigService struct {
@@ -27,7 +29,10 @@ func (s ConfigService) GetVersion() string {
 }
 
 func (s ConfigService) SaveOrUpdate(config domains.Config) error {
-	bean, _ := s.SafeFirst(domains.Config{})
+	bean, err := s.GetConfig()
+	if err != nil {
+		return err
+	}
 	if bean != nil {
 		config.Guid = bean.Guid
 		return global.NAV_DB.Model(&domains.Config{}).Where("guid = ?", config.Guid).
@@ -38,5 +43,9 @@ func (s ConfigService) SaveOrUpdate(config domains.Config) error {
 }
 
 func (s ConfigService) GetConfig() (*domains.Config, error) {
-	return s.SafeFirst(domains.Config{})
+	bean, err := s.SafeFirst(domains.Config{})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return bean, err
 }

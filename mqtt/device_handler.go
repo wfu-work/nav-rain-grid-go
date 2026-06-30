@@ -3,6 +3,7 @@ package mqtt
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,13 @@ import (
 
 var registerDeviceHeartbeatOnce sync.Once
 
+type deviceHeartbeatPayload struct {
+	Sncode string
+	Alias  string
+	Lat    *float64
+	Lng    *float64
+}
+
 func RegisterDeviceHeartbeatHandler() {
 	registerDeviceHeartbeatOnce.Do(func() {
 		BrokerServiceApp.AddMessageHandler(HandleDeviceHeartbeat)
@@ -23,16 +31,16 @@ func RegisterDeviceHeartbeatHandler() {
 }
 
 func HandleDeviceHeartbeat(clientID string, topic string, payload []byte) {
-	sncode := ExtractSNCode(topic, payload)
-	if sncode == "" {
+	heartbeat := ParseDeviceHeartbeat(topic, payload)
+	if heartbeat.Sncode == "" {
 		return
 	}
 
-	if err := SaveDeviceHeartbeat(sncode); err != nil {
+	if err := SaveDeviceHeartbeat(heartbeat); err != nil {
 		zap.L().Error("保存设备心跳失败",
 			zap.String("clientId", clientID),
 			zap.String("topic", topic),
-			zap.String("sncode", sncode),
+			zap.String("sncode", heartbeat.Sncode),
 			zap.Error(err),
 		)
 		return
@@ -41,13 +49,14 @@ func HandleDeviceHeartbeat(clientID string, topic string, payload []byte) {
 	zap.L().Info("设备心跳已保存",
 		zap.String("clientId", clientID),
 		zap.String("topic", topic),
-		zap.String("sncode", sncode),
+		zap.String("sncode", heartbeat.Sncode),
 	)
 }
 
-func SaveDeviceHeartbeat(sncode string) error {
-	sncode = strings.TrimSpace(sncode)
-	if sncode == "" {
+func SaveDeviceHeartbeat(heartbeat deviceHeartbeatPayload) error {
+	heartbeat.Sncode = strings.TrimSpace(heartbeat.Sncode)
+	heartbeat.Alias = strings.TrimSpace(heartbeat.Alias)
+	if heartbeat.Sncode == "" {
 		return nil
 	}
 	if global.NAV_DB == nil {
@@ -56,18 +65,105 @@ func SaveDeviceHeartbeat(sncode string) error {
 
 	now := time.Now().UnixMilli()
 	device := domains.Device{
-		Sncode:   sncode,
+		Sncode:   heartbeat.Sncode,
+		Alias:    heartbeat.Alias,
+		Lat:      heartbeat.Lat,
+		Lng:      heartbeat.Lng,
 		Status:   domains.DeviceStatusOnline,
 		LastTime: now,
 	}
+	updateValues := map[string]interface{}{
+		"status":      domains.DeviceStatusOnline,
+		"last_time":   now,
+		"update_time": now,
+	}
+	if heartbeat.Alias != "" {
+		updateValues["alias"] = heartbeat.Alias
+	}
+	if heartbeat.Lat != nil {
+		updateValues["lat"] = heartbeat.Lat
+	}
+	if heartbeat.Lng != nil {
+		updateValues["lng"] = heartbeat.Lng
+	}
 	return global.NAV_DB.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "sncode"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
-			"status":      domains.DeviceStatusOnline,
-			"last_time":   now,
-			"update_time": now,
-		}),
+		Columns:   []clause.Column{{Name: "sncode"}},
+		DoUpdates: clause.Assignments(updateValues),
 	}).Create(&device).Error
+}
+
+func ParseDeviceHeartbeat(topic string, payload []byte) deviceHeartbeatPayload {
+	if heartbeat, ok := parseDeviceHeartbeatFromJSON(payload); ok {
+		if heartbeat.Sncode != "" {
+			return heartbeat
+		}
+	}
+	return deviceHeartbeatPayload{
+		Sncode: ExtractSNCode(topic, payload),
+	}
+}
+
+func parseDeviceHeartbeatFromJSON(payload []byte) (deviceHeartbeatPayload, bool) {
+	body := strings.TrimSpace(string(payload))
+	if body == "" {
+		return deviceHeartbeatPayload{}, false
+	}
+
+	var value interface{}
+	decoder := json.NewDecoder(strings.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return deviceHeartbeatPayload{}, false
+	}
+
+	data, ok := value.(map[string]interface{})
+	if !ok {
+		return deviceHeartbeatPayload{}, false
+	}
+	return findDeviceHeartbeat(data), true
+}
+
+func findDeviceHeartbeat(data map[string]interface{}) deviceHeartbeatPayload {
+	heartbeat := deviceHeartbeatPayload{
+		Sncode: findSNCode(data),
+		Alias:  findStringValue(data, []string{"alias", "name", "deviceName", "device_name"}),
+		Lat:    findFloatValue(data, []string{"lat", "latitude"}),
+		Lng:    findFloatValue(data, []string{"lng", "lon", "longitude"}),
+	}
+	if heartbeat.Sncode != "" && heartbeat.hasDeviceInfo() {
+		return heartbeat
+	}
+
+	for _, value := range data {
+		if child, ok := value.(map[string]interface{}); ok {
+			childHeartbeat := findDeviceHeartbeat(child)
+			heartbeat = mergeDeviceHeartbeat(heartbeat, childHeartbeat)
+			if heartbeat.Sncode != "" && heartbeat.hasDeviceInfo() {
+				return heartbeat
+			}
+		}
+	}
+	return heartbeat
+}
+
+func (h deviceHeartbeatPayload) hasDeviceInfo() bool {
+	return h.Alias != "" || h.Lat != nil || h.Lng != nil
+}
+
+func mergeDeviceHeartbeat(base deviceHeartbeatPayload, child deviceHeartbeatPayload) deviceHeartbeatPayload {
+	if base.Sncode == "" {
+		base.Sncode = child.Sncode
+	}
+	if base.Alias == "" {
+		base.Alias = child.Alias
+	}
+	if base.Lat == nil {
+		base.Lat = child.Lat
+	}
+	if base.Lng == nil {
+		base.Lng = child.Lng
+	}
+	return base
 }
 
 func ExtractSNCode(topic string, payload []byte) string {
@@ -169,6 +265,56 @@ func extractSNCodeFromTopic(topic string) string {
 		}
 	}
 	return ""
+}
+
+func findStringValue(data map[string]interface{}, keys []string) string {
+	for _, key := range keys {
+		if value, ok := data[key]; ok {
+			if text := normalizeString(value); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func findFloatValue(data map[string]interface{}, keys []string) *float64 {
+	for _, key := range keys {
+		if value, ok := data[key]; ok {
+			if number, ok := normalizeFloat(value); ok {
+				return &number
+			}
+		}
+	}
+	return nil
+}
+
+func normalizeString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case json.Number:
+		return strings.TrimSpace(v.String())
+	case float64:
+		return strings.TrimSpace(strconv.FormatFloat(v, 'f', -1, 64))
+	default:
+		return ""
+	}
+}
+
+func normalizeFloat(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case float64:
+		return v, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func isSNCodeKey(key string) bool {

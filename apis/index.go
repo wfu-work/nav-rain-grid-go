@@ -13,13 +13,15 @@ type ApiGroup struct {
 	PredictApi
 	DeviceApi
 	GridApi
+	SystemMonitorApi
 }
 
 var (
-	configService  = services.ServiceGroupApp.ConfigService
-	predictService = services.ServiceGroupApp.PredictService
-	deviceService  = services.ServiceGroupApp.DeviceService
-	gridService    = services.ServiceGroupApp.GridService
+	configService        = services.ServiceGroupApp.ConfigService
+	predictService       = services.ServiceGroupApp.PredictService
+	deviceService        = services.ServiceGroupApp.DeviceService
+	gridService          = services.ServiceGroupApp.GridService
+	systemMonitorService = services.ServiceGroupApp.SystemMonitorService
 )
 
 func queryParams(c *gin.Context) map[string]string {
