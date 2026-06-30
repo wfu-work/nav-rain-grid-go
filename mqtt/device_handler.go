@@ -17,7 +17,7 @@ import (
 
 var registerDeviceHeartbeatOnce sync.Once
 
-type deviceHeartbeatPayload struct {
+type DeviceHeartbeatPayload struct {
 	Sncode string
 	Alias  string
 	Lat    *float64
@@ -53,7 +53,7 @@ func HandleDeviceHeartbeat(clientID string, topic string, payload []byte) {
 	)
 }
 
-func SaveDeviceHeartbeat(heartbeat deviceHeartbeatPayload) error {
+func SaveDeviceHeartbeat(heartbeat DeviceHeartbeatPayload) error {
 	heartbeat.Sncode = strings.TrimSpace(heartbeat.Sncode)
 	heartbeat.Alias = strings.TrimSpace(heartbeat.Alias)
 	if heartbeat.Sncode == "" {
@@ -92,39 +92,39 @@ func SaveDeviceHeartbeat(heartbeat deviceHeartbeatPayload) error {
 	}).Create(&device).Error
 }
 
-func ParseDeviceHeartbeat(topic string, payload []byte) deviceHeartbeatPayload {
+func ParseDeviceHeartbeat(topic string, payload []byte) DeviceHeartbeatPayload {
 	if heartbeat, ok := parseDeviceHeartbeatFromJSON(payload); ok {
 		if heartbeat.Sncode != "" {
 			return heartbeat
 		}
 	}
-	return deviceHeartbeatPayload{
+	return DeviceHeartbeatPayload{
 		Sncode: ExtractSNCode(topic, payload),
 	}
 }
 
-func parseDeviceHeartbeatFromJSON(payload []byte) (deviceHeartbeatPayload, bool) {
+func parseDeviceHeartbeatFromJSON(payload []byte) (DeviceHeartbeatPayload, bool) {
 	body := strings.TrimSpace(string(payload))
 	if body == "" {
-		return deviceHeartbeatPayload{}, false
+		return DeviceHeartbeatPayload{}, false
 	}
 
 	var value interface{}
 	decoder := json.NewDecoder(strings.NewReader(body))
 	decoder.UseNumber()
 	if err := decoder.Decode(&value); err != nil {
-		return deviceHeartbeatPayload{}, false
+		return DeviceHeartbeatPayload{}, false
 	}
 
 	data, ok := value.(map[string]interface{})
 	if !ok {
-		return deviceHeartbeatPayload{}, false
+		return DeviceHeartbeatPayload{}, false
 	}
 	return findDeviceHeartbeat(data), true
 }
 
-func findDeviceHeartbeat(data map[string]interface{}) deviceHeartbeatPayload {
-	heartbeat := deviceHeartbeatPayload{
+func findDeviceHeartbeat(data map[string]interface{}) DeviceHeartbeatPayload {
+	heartbeat := DeviceHeartbeatPayload{
 		Sncode: findSNCode(data),
 		Alias:  findStringValue(data, []string{"alias", "name", "deviceName", "device_name"}),
 		Lat:    findFloatValue(data, []string{"lat", "latitude"}),
@@ -146,11 +146,11 @@ func findDeviceHeartbeat(data map[string]interface{}) deviceHeartbeatPayload {
 	return heartbeat
 }
 
-func (h deviceHeartbeatPayload) hasDeviceInfo() bool {
+func (h DeviceHeartbeatPayload) hasDeviceInfo() bool {
 	return h.Alias != "" || h.Lat != nil || h.Lng != nil
 }
 
-func mergeDeviceHeartbeat(base deviceHeartbeatPayload, child deviceHeartbeatPayload) deviceHeartbeatPayload {
+func mergeDeviceHeartbeat(base DeviceHeartbeatPayload, child DeviceHeartbeatPayload) DeviceHeartbeatPayload {
 	if base.Sncode == "" {
 		base.Sncode = child.Sncode
 	}

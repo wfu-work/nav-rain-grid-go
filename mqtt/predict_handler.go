@@ -12,7 +12,6 @@ import (
 	"nav-rain-grid-go/services"
 
 	"github.com/wfu-work/nav-common-go-lib/global"
-	"github.com/wfu-work/nav-common-go-lib/utils"
 	"go.uber.org/zap"
 )
 
@@ -25,9 +24,10 @@ type PredictPayload struct {
 }
 
 type predictItem struct {
-	Hour int
-	Rain float64
-	Time int64
+	Hour      int
+	Rain      float64
+	RainLevel int
+	Time      int64
 }
 
 func RegisterPredictHandler() {
@@ -81,7 +81,7 @@ func SavePredictPayload(data PredictPayload) error {
 			Time:             predictTime,
 			Sncode:           data.Sncode,
 			PredictRain:      item.Rain,
-			PredictRainLevel: utils.GetLevel(item.Rain),
+			PredictRainLevel: item.RainLevel,
 			Type:             item.Hour,
 		})
 		if result == nil {
@@ -146,8 +146,9 @@ func extractPredictItems(data map[string]interface{}) []predictItem {
 	for _, hour := range []int{1, 12, 24} {
 		if rain, ok := extractRainByHour(data, hour); ok {
 			items = upsertPredictItem(items, predictItem{
-				Hour: hour,
-				Rain: rain,
+				Hour:      hour,
+				Rain:      rain,
+				RainLevel: extractRainLevelByHour(data, hour),
 			})
 		}
 	}
@@ -169,8 +170,9 @@ func extractPredictItemsFromMap(data map[string]interface{}) []predictItem {
 		for _, hour := range []int{1, 12, 24} {
 			if rain, ok := extractRainByHour(values, hour); ok {
 				items = upsertPredictItem(items, predictItem{
-					Hour: hour,
-					Rain: rain,
+					Hour:      hour,
+					Rain:      rain,
+					RainLevel: extractRainLevelByHour(values, hour),
 				})
 			}
 		}
@@ -201,9 +203,10 @@ func extractPredictItemsFromArray(data map[string]interface{}) []predictItem {
 				continue
 			}
 			items = upsertPredictItem(items, predictItem{
-				Hour: hour,
-				Rain: rain,
-				Time: extractPredictTime(itemMap),
+				Hour:      hour,
+				Rain:      rain,
+				RainLevel: extractRainLevel(itemMap),
+				Time:      extractPredictTime(itemMap),
 			})
 		}
 	}
@@ -235,6 +238,18 @@ func extractRain(data map[string]interface{}) (float64, bool) {
 	return 0, false
 }
 
+func extractRainLevel(data map[string]interface{}) int {
+	keys := []string{"PredictLevel", "predictLevel", "predict_level", "predictRainLevel", "predict_rain_level", "rainLevel", "rain_level", "level"}
+	for _, key := range keys {
+		if value, ok := data[key]; ok {
+			if level, ok := numberToInt(value); ok {
+				return level
+			}
+		}
+	}
+	return 0
+}
+
 func extractRainByHour(data map[string]interface{}, hour int) (float64, bool) {
 	keys := rainKeys(hour)
 	for _, key := range keys {
@@ -243,6 +258,18 @@ func extractRainByHour(data map[string]interface{}, hour int) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func extractRainLevelByHour(data map[string]interface{}, hour int) int {
+	keys := rainLevelKeys(hour)
+	for _, key := range keys {
+		if value, ok := data[key]; ok {
+			if level, ok := numberToInt(value); ok {
+				return level
+			}
+		}
+	}
+	return extractRainLevel(data)
 }
 
 func rainKeys(hour int) []string {
@@ -260,6 +287,29 @@ func rainKeys(hour int) []string {
 		fmt.Sprintf("predict_rain_%dh", hour),
 		fmt.Sprintf("predict%d", hour),
 		fmt.Sprintf("predict_%d", hour),
+	}
+}
+
+func rainLevelKeys(hour int) []string {
+	return []string{
+		fmt.Sprintf("PredictLevel%d", hour),
+		fmt.Sprintf("PredictLevel%dH", hour),
+		fmt.Sprintf("predictLevel%d", hour),
+		fmt.Sprintf("predictLevel%dH", hour),
+		fmt.Sprintf("predict_level_%d", hour),
+		fmt.Sprintf("predict_level_%dh", hour),
+		fmt.Sprintf("predictRainLevel%d", hour),
+		fmt.Sprintf("predictRainLevel%dH", hour),
+		fmt.Sprintf("predict_rain_level_%d", hour),
+		fmt.Sprintf("predict_rain_level_%dh", hour),
+		fmt.Sprintf("rainLevel%d", hour),
+		fmt.Sprintf("rainLevel%dH", hour),
+		fmt.Sprintf("rain_level_%d", hour),
+		fmt.Sprintf("rain_level_%dh", hour),
+		fmt.Sprintf("level%d", hour),
+		fmt.Sprintf("level_%d", hour),
+		fmt.Sprintf("level%dh", hour),
+		fmt.Sprintf("level_%dh", hour),
 	}
 }
 

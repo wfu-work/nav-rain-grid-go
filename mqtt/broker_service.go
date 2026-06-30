@@ -248,7 +248,7 @@ func (h *authHook) OnConnectAuthenticate(cl *mqttserver.Client, pk packets.Packe
 		clientID = pk.Connect.ClientIdentifier
 	}
 	zap.L().Warn("MQTT客户端认证失败",
-		zap.String("clientID", clientID),
+		zap.String("clientId", clientID),
 		zap.String("username", username),
 	)
 	return false
