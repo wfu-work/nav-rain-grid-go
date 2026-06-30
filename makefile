@@ -2,7 +2,7 @@
 BIN_DIR = build
 
 # 程序名
-APP_NAME = Gnss
+APP_NAME = navRainGridApp
 
 # 日期
 DATE := $(shell date +%Y%m%d)
