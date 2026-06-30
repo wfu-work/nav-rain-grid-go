@@ -22,6 +22,7 @@ type DeviceHeartbeatPayload struct {
 	Alias  string
 	Lat    *float64
 	Lng    *float64
+	Alt    *float64
 }
 
 func RegisterDeviceHeartbeatHandler() {
@@ -85,6 +86,9 @@ func SaveDeviceHeartbeat(heartbeat DeviceHeartbeatPayload) error {
 	}
 	if heartbeat.Lng != nil {
 		updateValues["lng"] = heartbeat.Lng
+	}
+	if heartbeat.Alt != nil {
+		updateValues["alt"] = heartbeat.Alt
 	}
 	return global.NAV_DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "sncode"}},

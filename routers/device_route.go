@@ -15,6 +15,7 @@ func (s *DeviceRouter) InitDeviceRouter(Router *gin.RouterGroup) {
 		routerLogger.DELETE(":guid", deviceApi.DeleteByGuid) // 删除设备
 	}
 	{
+		router.GET("list/all", deviceApi.ListAll)           // 获取全部设备列表
 		router.GET("list", deviceApi.List)                  // 分页获取设备列表
 		router.GET("query", deviceApi.Query)                // 查询设备列表
 		router.GET("sncode/:sncode", deviceApi.GetBySncode) // 根据设备号查询设备

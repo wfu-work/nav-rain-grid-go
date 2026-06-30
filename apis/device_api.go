@@ -152,6 +152,26 @@ func (i DeviceApi) List(c *gin.Context) {
 	}, c)
 }
 
+// ListAll 获取全部设备列表
+// @Summary 获取全部设备列表
+// @Description 获取全部设备列表
+// @Tags 设备模块
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param data query any false "查询参数"
+// @Success 200 {object} response.Response{data=[]domains.Device,msg=string}
+// @Router /device/list/all [get]
+func (i DeviceApi) ListAll(c *gin.Context) {
+	result, err := deviceService.Query(queryParams(c))
+	if err != nil {
+		global.NAV_LOG.Error("获取全部设备列表失败", zap.Error(err))
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+	response.Ok(result, c)
+}
+
 // Query 查询设备列表
 // @Summary 查询设备列表
 // @Description 查询设备列表
