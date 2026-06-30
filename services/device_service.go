@@ -109,6 +109,25 @@ func (s DeviceService) Query(params map[string]string) ([]domains.Device, error)
 	return results, err
 }
 
+func (s DeviceService) MarkOfflineExpired(timeout time.Duration) (int64, error) {
+	if global.NAV_DB == nil {
+		return 0, errors.New("database is not initialized")
+	}
+	if timeout <= 0 {
+		return 0, errors.New("timeout must be greater than 0")
+	}
+
+	now := time.Now().UnixMilli()
+	cutoff := time.Now().Add(-timeout).UnixMilli()
+	result := global.NAV_DB.Model(&domains.Device{}).
+		Where("status = ? AND last_time > 0 AND last_time < ?", domains.DeviceStatusOnline, cutoff).
+		Updates(map[string]interface{}{
+			"status":      domains.DeviceStatusOffline,
+			"update_time": now,
+		})
+	return result.RowsAffected, result.Error
+}
+
 func (s DeviceService) buildDeviceQuery(params map[string]string) *gorm.DB {
 	db := global.NAV_DB.Model(new(domains.Device))
 

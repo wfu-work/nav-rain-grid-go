@@ -14,8 +14,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const DeviceStatusOnline = 1
-
 var registerDeviceHeartbeatOnce sync.Once
 
 func RegisterDeviceHeartbeatHandler() {
@@ -59,13 +57,13 @@ func SaveDeviceHeartbeat(sncode string) error {
 	now := time.Now().UnixMilli()
 	device := domains.Device{
 		Sncode:   sncode,
-		Status:   DeviceStatusOnline,
+		Status:   domains.DeviceStatusOnline,
 		LastTime: now,
 	}
 	return global.NAV_DB.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "sncode"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			"status":      DeviceStatusOnline,
+			"status":      domains.DeviceStatusOnline,
 			"last_time":   now,
 			"update_time": now,
 		}),

@@ -4,6 +4,7 @@ import (
 	"nav-rain-grid-go/domains"
 	"nav-rain-grid-go/mqtt"
 	"nav-rain-grid-go/routers"
+	scheduleds2 "nav-rain-grid-go/scheduleds"
 	"nav-rain-grid-go/webs"
 
 	"github.com/gin-gonic/gin"
@@ -24,7 +25,7 @@ func Init() {
 		mqtt.InitMqtt()
 	})
 	sysInit.OnScheInit(func(timers scheduleds.Timer, options []cron.Option) {
-
+		scheduleds2.Init(timers, options)
 	})
 	sysInit.OnWebInit(func(router *gin.Engine) {
 		_ = webs.InitStatic(router)

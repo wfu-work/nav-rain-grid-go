@@ -2,6 +2,11 @@ package domains
 
 import "github.com/wfu-work/nav-common-go-lib/domains"
 
+const (
+	DeviceStatusOffline = 0
+	DeviceStatusOnline  = 1
+)
+
 type Device struct {
 	domains.BaseDataEntity
 	Sncode   string   `json:"sncode" gorm:"size:50;uniqueIndex;comment:设备号"`
