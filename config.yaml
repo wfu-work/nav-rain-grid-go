@@ -1,0 +1,24 @@
+system:
+  app-name: "nav-rain-grid"
+  addr: 18889
+  db-type: sqlite
+  router-prefix: /api
+jwt:
+  issuer: nav-rain-grid
+  signing-key: "nav-rain-grid"
+local:
+  oss-path: ./data/oss
+  proxy-oss-path: /oss
+  cache-path: ./data/cache.json
+sqlite:
+  db-name: nav-rain-grid
+  path: ./data/
+zap:
+  director: logback
+  level: info
+  prefix: '[nav-rain-grid-server]'
+  retention-day: 3
+mqtt:
+  enable: true
+  host: ""
+  port: 1883
