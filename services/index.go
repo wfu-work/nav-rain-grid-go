@@ -10,6 +10,7 @@ type ServiceGroup struct {
 	ConfigService
 	PredictService
 	DeviceService
+	GridService
 }
 
 type HasBaseData interface {

@@ -14,6 +14,7 @@ func RegisterTables() {
 		Config{},
 		Predict{},
 		Device{},
+		Grid{},
 	)
 	if err != nil {
 		global.NAV_LOG.Error("register business table failed", zap.Error(err))
