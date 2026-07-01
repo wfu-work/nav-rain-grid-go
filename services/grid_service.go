@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"nav-rain-grid-go/domains"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,12 +28,13 @@ func (s GridService) SaveOrUpdate(entity domains.Grid) error {
 	if global.NAV_DB == nil {
 		return errors.New("database is not initialized")
 	}
+	entity.Resolution = normalizeGridResolution(entity.Resolution)
 
 	now := time.Now().UnixMilli()
 	updateValues := map[string]interface{}{
 		"name":         entity.Name,
 		"sncodes":      strings.TrimSpace(entity.Sncodes),
-		"resolution":   strings.TrimSpace(entity.Resolution),
+		"resolution":   entity.Resolution,
 		"min_device":   entity.MinDevice,
 		"min_distance": entity.MinDistance,
 		"status":       entity.Status,
@@ -54,6 +56,13 @@ func (s GridService) SaveOrUpdate(entity domains.Grid) error {
 		return err
 	}
 	return s.Create(entity)
+}
+
+func normalizeGridResolution(resolution float64) float64 {
+	if resolution <= 0 {
+		return domains.DefaultGridResolution
+	}
+	return resolution
 }
 
 func (s GridService) List(params map[string]string) (list interface{}, total int64, err error) {
@@ -106,7 +115,9 @@ func (s GridService) buildGridQuery(params map[string]string) *gorm.DB {
 		db = db.Where("sncodes like ?", "%"+sncode+"%")
 	}
 	if resolution := strings.TrimSpace(params["resolution"]); resolution != "" {
-		db = db.Where("resolution = ?", resolution)
+		if value, err := strconv.ParseFloat(resolution, 64); err == nil {
+			db = db.Where("resolution = ?", value)
+		}
 	}
 	if status := strings.TrimSpace(params["status"]); status != "" {
 		db = db.Where("status = ?", status)
