@@ -9,12 +9,13 @@ import (
 	"go.uber.org/zap"
 )
 
-const gridCalculateDelay = 5 * time.Minute
+const gridCalculateCron = "0 5 * * * *"
 
 func RegisterGrid(timers commonScheduleds.Timer, options []cron.Option) {
-	_, err := timers.AddTaskByFunc("GridRainCalculate", "@every 1h", func() {
-		time.Sleep(gridCalculateDelay)
-		results, err := services.GridCalculationServiceApp.CalculateEnabledGrids(time.Now())
+	_, err := timers.AddTaskByFunc("GridRainCalculate", gridCalculateCron, func() {
+		now := time.Now()
+		zap.L().Info("格网降雨差分计算开始", zap.Time("time", now))
+		results, err := services.GridCalculationServiceApp.CalculateEnabledGrids(now)
 		if err != nil {
 			zap.L().Error("格网降雨差分计算失败", zap.Error(err))
 			return
@@ -27,9 +28,8 @@ func RegisterGrid(timers commonScheduleds.Timer, options []cron.Option) {
 		zap.L().Info("格网降雨差分计算完成",
 			zap.Int("gridCount", gridCount),
 			zap.Int("pointCount", pointCount),
-			zap.Duration("delay", gridCalculateDelay),
 		)
-	}, "每小时延迟5分钟后基于启用格网配置计算1/12/24小时格网中心点预测降雨", options...)
+	}, "每小时第5分钟基于启用格网配置计算1/12/24小时格网中心点预测降雨", options...)
 	if err != nil {
 		zap.L().Error("注册格网降雨差分计算任务失败", zap.Error(err))
 	}
