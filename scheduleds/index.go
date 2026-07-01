@@ -7,4 +7,5 @@ import (
 
 func Init(timers scheduleds.Timer, options []cron.Option) {
 	RegisterDeviceStatusCheck(timers, options)
+	RegisterGrid(timers, options)
 }

@@ -131,6 +131,26 @@ func (i GridApi) List(c *gin.Context) {
 	}, c)
 }
 
+// ListAll 获取全部格网列表
+// @Summary 获取全部格网列表
+// @Description 获取全部格网列表
+// @Tags 格网模块
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param data query any false "查询参数"
+// @Success 200 {object} response.Response{data=[]domains.Grid,msg=string}
+// @Router /grid/list/all [get]
+func (i GridApi) ListAll(c *gin.Context) {
+	result, err := gridService.Query(queryParams(c))
+	if err != nil {
+		global.NAV_LOG.Error("获取全部格网列表失败", zap.Error(err))
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+	response.Ok(result, c)
+}
+
 // Query 查询格网列表
 // @Summary 查询格网列表
 // @Description 查询格网列表

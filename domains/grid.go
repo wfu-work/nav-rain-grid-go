@@ -4,6 +4,11 @@ import "github.com/wfu-work/nav-common-go-lib/domains"
 
 const DefaultGridResolution = 0.01
 
+const (
+	GridStatusDisabled = 0
+	GridStatusEnabled  = 1
+)
+
 type Grid struct {
 	domains.BaseDataEntity
 	Name        string  `json:"name" gorm:"index;comment:格网名称"`

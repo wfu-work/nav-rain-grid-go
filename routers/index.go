@@ -13,6 +13,8 @@ type RouterGroup struct {
 	PredictRouter
 	DeviceRouter
 	GridRouter
+	GridDiffTaskRouter
+	GridDiffPointRouter
 	SystemMonitorRouter
 }
 
@@ -21,6 +23,8 @@ var (
 	predictApi       = apis.ApiGroupApp.PredictApi
 	deviceApi        = apis.ApiGroupApp.DeviceApi
 	gridApi          = apis.ApiGroupApp.GridApi
+	gridDiffTaskApi  = apis.ApiGroupApp.GridDiffTaskApi
+	gridDiffPointApi = apis.ApiGroupApp.GridDiffPointApi
 	systemMonitorApi = apis.ApiGroupApp.SystemMonitorApi
 )
 
@@ -29,5 +33,7 @@ func AppRouterInit(publicGroup *gin.RouterGroup, privateGroup *gin.RouterGroup) 
 	RouterGroupApp.InitPredictRouter(privateGroup)
 	RouterGroupApp.InitDeviceRouter(privateGroup)
 	RouterGroupApp.InitGridRouter(privateGroup)
+	RouterGroupApp.InitGridDiffTaskRouter(privateGroup)
+	RouterGroupApp.InitGridDiffPointRouter(privateGroup)
 	RouterGroupApp.InitSystemMonitorRouter(privateGroup)
 }

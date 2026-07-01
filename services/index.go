@@ -11,6 +11,9 @@ type ServiceGroup struct {
 	PredictService
 	DeviceService
 	GridService
+	GridCalculationService
+	GridDiffTaskService
+	GridDiffPointService
 	SystemMonitorService
 }
 

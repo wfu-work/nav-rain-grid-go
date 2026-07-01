@@ -13,6 +13,8 @@ type ApiGroup struct {
 	PredictApi
 	DeviceApi
 	GridApi
+	GridDiffTaskApi
+	GridDiffPointApi
 	SystemMonitorApi
 }
 
@@ -21,6 +23,8 @@ var (
 	predictService       = services.ServiceGroupApp.PredictService
 	deviceService        = services.ServiceGroupApp.DeviceService
 	gridService          = services.ServiceGroupApp.GridService
+	gridDiffTaskService  = services.ServiceGroupApp.GridDiffTaskService
+	gridDiffPointService = services.ServiceGroupApp.GridDiffPointService
 	systemMonitorService = services.ServiceGroupApp.SystemMonitorService
 )
 
