@@ -1,0 +1,15 @@
+[Unit]
+Description=navfirst rain grid predict for go
+After=network.target
+
+[Service]
+Type=idle
+TimeoutStartSec=infinity
+ExecStartPre=/bin/sleep 5
+ExecStart=/mnt/navfirst/nav-rain-go/navRainGridApp
+WorkingDirectory=/mnt/navfirst/nav-rain-go
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
