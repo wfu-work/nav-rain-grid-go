@@ -14,6 +14,7 @@ type ServiceGroup struct {
 	GridCalculationService
 	GridDiffTaskService
 	GridDiffPointService
+	PushRecordService
 	SystemMonitorService
 }
 

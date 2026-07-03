@@ -17,6 +17,7 @@ func RegisterTables() {
 		Grid{},
 		GridDiffTask{},
 		GridDiffPoint{},
+		PushRecord{},
 	)
 	if err != nil {
 		global.NAV_LOG.Error("register business table failed", zap.Error(err))

@@ -59,6 +59,22 @@ func (s GridDiffTaskService) Query(params map[string]string) ([]domains.GridDiff
 	return results, err
 }
 
+func (s GridDiffTaskService) LatestSuccessNCByGridGuid(gridGuid string) (domains.GridDiffTask, error) {
+	if global.NAV_DB == nil {
+		return domains.GridDiffTask{}, errors.New("database is not initialized")
+	}
+	gridGuid = strings.TrimSpace(gridGuid)
+	if gridGuid == "" {
+		return domains.GridDiffTask{}, errors.New("grid guid is required")
+	}
+	var result domains.GridDiffTask
+	err := global.NAV_DB.
+		Where("grid_guid = ? AND nc_status = ? AND nc_file_path <> ''", gridGuid, domains.GridDiffTaskNcStatusSuccess).
+		Order("base_time desc, id desc").
+		First(&result).Error
+	return result, err
+}
+
 func (s GridDiffTaskService) buildGridDiffTaskQuery(params map[string]string) *gorm.DB {
 	db := global.NAV_DB.Model(new(domains.GridDiffTask))
 

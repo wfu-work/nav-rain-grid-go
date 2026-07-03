@@ -15,6 +15,7 @@ type ApiGroup struct {
 	GridApi
 	GridDiffTaskApi
 	GridDiffPointApi
+	PushRecordApi
 	SystemMonitorApi
 }
 
@@ -25,6 +26,7 @@ var (
 	gridService          = services.ServiceGroupApp.GridService
 	gridDiffTaskService  = services.ServiceGroupApp.GridDiffTaskService
 	gridDiffPointService = services.ServiceGroupApp.GridDiffPointService
+	pushRecordService    = services.ServiceGroupApp.PushRecordService
 	systemMonitorService = services.ServiceGroupApp.SystemMonitorService
 )
 
