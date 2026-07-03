@@ -3,8 +3,11 @@ package mqtt
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"nav-rain-grid-go/configs"
+	"nav-rain-grid-go/domains"
 	"strings"
 	"sync"
 	"time"
@@ -14,9 +17,12 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 var BrokerServiceApp = new(BrokerService)
+
+const RainGridSettingsKey = "rain-grid-settings"
 
 type MessageHandler func(clientID string, topic string, payload []byte)
 
@@ -51,6 +57,11 @@ type BrokerMonitorInfo struct {
 	CheckedAt       int64    `json:"checkedAt"`
 }
 
+type rainGridSettings struct {
+	MqttEnable *bool `json:"mqttEnable"`
+	MqttPort   int   `json:"mqttPort"`
+}
+
 func InitMqtt() {
 	RegisterDeviceHeartbeatHandler()
 	RegisterPredictHandler()
@@ -60,38 +71,30 @@ func InitMqtt() {
 }
 
 func (s *BrokerService) Start() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.server != nil {
-		return nil
-	}
-
 	cfg := loadConfig()
 	if !cfg.Enable {
+		s.mu.Lock()
+		s.config = cfg
+		s.mu.Unlock()
 		zap.L().Info("MQTT服务端未启用")
 		return nil
 	}
 
-	server := mqttserver.New(nil)
-	if err := server.AddHook(new(authHook), nil); err != nil {
-		return fmt.Errorf("添加MQTT认证hook失败: %w", err)
-	}
-	if err := server.AddHook(new(receiveHook), &receiveHookOptions{service: s}); err != nil {
-		return fmt.Errorf("添加MQTT接收hook失败: %w", err)
+	server, err := newMqttServer(s, cfg)
+	if err != nil {
+		return err
 	}
 
-	tcp := listeners.NewTCP(listeners.Config{
-		ID:      "mqtt-tcp",
-		Address: cfg.Address(),
-	})
-	if err := server.AddListener(tcp); err != nil {
-		return fmt.Errorf("监听MQTT端口失败: %w", err)
+	s.mu.Lock()
+	if s.server != nil {
+		s.mu.Unlock()
+		_ = server.Close()
+		return nil
 	}
-
 	s.server = server
 	s.config = cfg
 	s.startedAt = time.Now()
+	s.mu.Unlock()
 
 	go s.serve(server)
 	zap.L().Info("MQTT服务端已启动", zap.String("address", cfg.Address()))
@@ -99,17 +102,79 @@ func (s *BrokerService) Start() error {
 }
 
 func (s *BrokerService) Stop() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.stopWithConfig(configs.MqttConfig{})
+}
 
-	if s.server == nil {
+func (s *BrokerService) Reload() error {
+	cfg := loadConfig()
+	if !cfg.Enable {
+		s.stopWithConfig(cfg)
+		zap.L().Info("MQTT服务端已按配置停用")
+		return nil
+	}
+
+	s.mu.RLock()
+	current := s.server
+	currentConfig := s.config
+	s.mu.RUnlock()
+
+	if current != nil && mqttConfigEqual(currentConfig, cfg) {
+		s.mu.Lock()
+		s.config = cfg
+		s.mu.Unlock()
+		return nil
+	}
+
+	server, err := newMqttServer(s, cfg)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	oldServer := s.server
+	oldConfig := s.config
+	if oldServer != nil && mqttConfigEqual(oldConfig, cfg) {
+		s.config = cfg
+		s.mu.Unlock()
+		_ = server.Close()
+		return nil
+	}
+	s.server = server
+	s.config = cfg
+	s.startedAt = time.Now()
+	s.mu.Unlock()
+
+	go s.serve(server)
+
+	if oldServer != nil {
+		if err := oldServer.Close(); err != nil {
+			zap.L().Error("旧MQTT服务端关闭失败", zap.Error(err))
+		}
+		zap.L().Info("MQTT服务端已重载",
+			zap.String("oldAddress", oldConfig.Address()),
+			zap.String("newAddress", cfg.Address()),
+		)
+		return nil
+	}
+
+	zap.L().Info("MQTT服务端已启动", zap.String("address", cfg.Address()))
+	return nil
+}
+
+func (s *BrokerService) stopWithConfig(cfg configs.MqttConfig) {
+	s.mu.Lock()
+	server := s.server
+	s.server = nil
+	s.config = cfg
+	s.startedAt = time.Time{}
+	s.mu.Unlock()
+
+	if server == nil {
 		return
 	}
-	if err := s.server.Close(); err != nil {
+	if err := server.Close(); err != nil {
 		zap.L().Error("MQTT服务端关闭失败", zap.Error(err))
 	}
-	s.server = nil
-	s.startedAt = time.Time{}
 	zap.L().Info("MQTT服务端已关闭")
 }
 
@@ -191,6 +256,14 @@ func (s *BrokerService) Status() BrokerMonitorInfo {
 }
 
 func loadConfig() configs.MqttConfig {
+	yamlCfg := loadYamlConfig()
+	if dbCfg, ok := loadDatabaseMqttConfig(yamlCfg); ok {
+		return dbCfg
+	}
+	return yamlCfg
+}
+
+func loadYamlConfig() configs.MqttConfig {
 	cfg := configs.MqttConfig{
 		Enable: true,
 		Port:   configs.DefaultMqttPort,
@@ -212,6 +285,66 @@ func loadConfig() configs.MqttConfig {
 		cfg.Port = configs.DefaultMqttPort
 	}
 	return cfg
+}
+
+func loadDatabaseMqttConfig(defaultConfig configs.MqttConfig) (configs.MqttConfig, bool) {
+	if global.NAV_DB == nil {
+		return configs.MqttConfig{}, false
+	}
+
+	var config domains.Config
+	err := global.NAV_DB.Where("`key` = ?", RainGridSettingsKey).Order("id desc").First(&config).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return configs.MqttConfig{}, false
+	}
+	if err != nil {
+		zap.L().Warn("读取数据库MQTT配置失败, 使用YAML配置", zap.Error(err))
+		return configs.MqttConfig{}, false
+	}
+	if strings.TrimSpace(config.Value) == "" {
+		return configs.MqttConfig{}, false
+	}
+
+	var settings rainGridSettings
+	if err := json.Unmarshal([]byte(config.Value), &settings); err != nil {
+		zap.L().Warn("解析数据库MQTT配置失败, 使用YAML配置", zap.Error(err))
+		return configs.MqttConfig{}, false
+	}
+
+	cfg := defaultConfig
+	if settings.MqttEnable != nil {
+		cfg.Enable = *settings.MqttEnable
+	}
+	if settings.MqttPort > 0 {
+		cfg.Port = settings.MqttPort
+	}
+	if cfg.Port == 0 {
+		cfg.Port = configs.DefaultMqttPort
+	}
+	return cfg, true
+}
+
+func newMqttServer(service *BrokerService, cfg configs.MqttConfig) (*mqttserver.Server, error) {
+	server := mqttserver.New(nil)
+	if err := server.AddHook(new(authHook), nil); err != nil {
+		return nil, fmt.Errorf("添加MQTT认证hook失败: %w", err)
+	}
+	if err := server.AddHook(new(receiveHook), &receiveHookOptions{service: service}); err != nil {
+		return nil, fmt.Errorf("添加MQTT接收hook失败: %w", err)
+	}
+
+	tcp := listeners.NewTCP(listeners.Config{
+		ID:      "mqtt-tcp",
+		Address: cfg.Address(),
+	})
+	if err := server.AddListener(tcp); err != nil {
+		return nil, fmt.Errorf("监听MQTT端口失败: %w", err)
+	}
+	return server, nil
+}
+
+func mqttConfigEqual(a configs.MqttConfig, b configs.MqttConfig) bool {
+	return a.Enable == b.Enable && a.Host == b.Host && a.Port == b.Port
 }
 
 type receiveHookOptions struct {

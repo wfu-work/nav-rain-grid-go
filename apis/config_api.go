@@ -2,6 +2,8 @@ package apis
 
 import (
 	"nav-rain-grid-go/domains"
+	"nav-rain-grid-go/mqtt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wfu-work/nav-common-go-lib/global"
@@ -33,6 +35,13 @@ func (i ConfigApi) Save(c *gin.Context) {
 		global.NAV_LOG.Error("创建失败!", zap.Error(err))
 		response.Fail(false, c)
 		return
+	}
+	if strings.TrimSpace(entity.Key) == mqtt.RainGridSettingsKey {
+		if err := mqtt.BrokerServiceApp.Reload(); err != nil {
+			global.NAV_LOG.Error("MQTT服务重载失败", zap.Error(err))
+			response.FailWithMessage("配置已保存，MQTT服务重载失败："+err.Error(), c)
+			return
+		}
 	}
 	response.Ok(true, c)
 }

@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/mochi-mqtt/server/v2 v2.7.9
+	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/swaggo/swag v1.16.6
 	github.com/wfu-work/nav-common-go-lib v0.0.0-20260620025348-2e815ed3d262

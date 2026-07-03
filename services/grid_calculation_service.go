@@ -14,7 +14,11 @@ import (
 )
 
 const (
-	gridNearestDeviceCount = 3
+	gridMinimumDeviceCount = 3
+	gridInfluenceRadiusKm  = 5.0
+	earthRadiusKm          = 6371.0088
+	kilometersPerDegreeLat = 111.32
+	distanceEpsilonKm      = 1e-9
 )
 
 type GridCalculationService struct{}
@@ -97,11 +101,13 @@ func (s GridCalculationService) calculateGrid(grid domains.Grid, now time.Time) 
 	}
 
 	result := domains.GridDiffResult{
-		GridGuid:   grid.Guid,
-		GridName:   grid.Name,
-		BaseTime:   baseTime,
-		Resolution: resolution,
-		Points:     make([]domains.GridDiffPointResult, 0, len(centers)),
+		GridGuid:         grid.Guid,
+		GridName:         grid.Name,
+		GridIdentifier:   normalizeGridIdentifier(grid.GridIdentifier, grid.Name),
+		CoordinateSystem: normalizeGridCoordinateSystem(grid.CoordinateSystem),
+		BaseTime:         baseTime,
+		Resolution:       resolution,
+		Points:           make([]domains.GridDiffPointResult, 0, len(centers)),
 	}
 	for _, center := range centers {
 		point := domains.GridDiffPointResult{
@@ -164,8 +170,10 @@ func alignGridBaseTime(now time.Time) int64 {
 }
 
 func (s GridCalculationService) saveGridDiffResult(result domains.GridDiffResult) error {
-	return global.NAV_DB.Transaction(func(tx *gorm.DB) error {
-		taskGuid, err := upsertGridDiffTask(tx, result)
+	var taskGuid string
+	if err := global.NAV_DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		taskGuid, err = upsertGridDiffTask(tx, result)
 		if err != nil {
 			return err
 		}
@@ -177,21 +185,38 @@ func (s GridCalculationService) saveGridDiffResult(result domains.GridDiffResult
 			return nil
 		}
 		return tx.Create(&points).Error
-	})
+	}); err != nil {
+		return err
+	}
+
+	ncFile, err := generateGridDiffNCFile(result)
+	if err != nil {
+		_ = updateGridDiffTaskNCFailed(taskGuid, err)
+		return err
+	}
+	return updateGridDiffTaskNCSuccess(taskGuid, ncFile)
 }
 
 func upsertGridDiffTask(tx *gorm.DB, result domains.GridDiffResult) (string, error) {
 	var existing domains.GridDiffTask
 	err := tx.Where("grid_guid = ? AND base_time = ?", result.GridGuid, result.BaseTime).First(&existing).Error
 	updateValues := map[string]interface{}{
-		"grid_guid":   result.GridGuid,
-		"grid_name":   result.GridName,
-		"base_time":   result.BaseTime,
-		"resolution":  result.Resolution,
-		"point_count": len(result.Points),
-		"status":      domains.GridDiffTaskStatusSuccess,
-		"error_msg":   "",
-		"update_time": time.Now().UnixMilli(),
+		"grid_guid":         result.GridGuid,
+		"grid_name":         result.GridName,
+		"grid_identifier":   result.GridIdentifier,
+		"coordinate_system": result.CoordinateSystem,
+		"base_time":         result.BaseTime,
+		"resolution":        result.Resolution,
+		"point_count":       len(result.Points),
+		"status":            domains.GridDiffTaskStatusSuccess,
+		"error_msg":         "",
+		"nc_file_path":      "",
+		"nc_file_name":      "",
+		"nc_file_size":      0,
+		"nc_checksum":       "",
+		"nc_status":         domains.GridDiffTaskNcStatusPending,
+		"nc_error_msg":      "",
+		"update_time":       time.Now().UnixMilli(),
 	}
 	if err == nil {
 		return existing.Guid, tx.Model(&existing).Updates(updateValues).Error
@@ -201,17 +226,44 @@ func upsertGridDiffTask(tx *gorm.DB, result domains.GridDiffResult) (string, err
 	}
 
 	task := domains.GridDiffTask{
-		GridGuid:   result.GridGuid,
-		GridName:   result.GridName,
-		BaseTime:   result.BaseTime,
-		Resolution: result.Resolution,
-		PointCount: len(result.Points),
-		Status:     domains.GridDiffTaskStatusSuccess,
+		GridGuid:         result.GridGuid,
+		GridName:         result.GridName,
+		GridIdentifier:   result.GridIdentifier,
+		CoordinateSystem: result.CoordinateSystem,
+		BaseTime:         result.BaseTime,
+		Resolution:       result.Resolution,
+		PointCount:       len(result.Points),
+		Status:           domains.GridDiffTaskStatusSuccess,
+		NcStatus:         domains.GridDiffTaskNcStatusPending,
 	}
 	if err := tx.Create(&task).Error; err != nil {
 		return "", err
 	}
 	return task.Guid, nil
+}
+
+func updateGridDiffTaskNCSuccess(taskGuid string, ncFile gridDiffNCFile) error {
+	return global.NAV_DB.Model(&domains.GridDiffTask{}).
+		Where("guid = ?", taskGuid).
+		Updates(map[string]interface{}{
+			"nc_file_path": ncFile.Path,
+			"nc_file_name": ncFile.Name,
+			"nc_file_size": ncFile.Size,
+			"nc_checksum":  ncFile.Checksum,
+			"nc_status":    domains.GridDiffTaskNcStatusSuccess,
+			"nc_error_msg": "",
+			"update_time":  time.Now().UnixMilli(),
+		}).Error
+}
+
+func updateGridDiffTaskNCFailed(taskGuid string, err error) error {
+	return global.NAV_DB.Model(&domains.GridDiffTask{}).
+		Where("guid = ?", taskGuid).
+		Updates(map[string]interface{}{
+			"nc_status":    domains.GridDiffTaskNcStatusFailed,
+			"nc_error_msg": err.Error(),
+			"update_time":  time.Now().UnixMilli(),
+		}).Error
 }
 
 func buildGridDiffPointRows(taskGuid string, result domains.GridDiffResult) []domains.GridDiffPoint {
@@ -248,35 +300,44 @@ type gridCenter struct {
 
 func buildGridCenters(devices []domains.Device, resolution float64) []gridCenter {
 	resolution = normalizeGridResolution(resolution)
-	minLng, maxLng := math.MaxFloat64, -math.MaxFloat64
-	minLat, maxLat := math.MaxFloat64, -math.MaxFloat64
+	seen := make(map[[2]int]struct{})
+	centers := make([]gridCenter, 0)
+
 	for _, device := range devices {
 		if device.Lng == nil || device.Lat == nil {
 			continue
 		}
-		minLng = math.Min(minLng, *device.Lng)
-		maxLng = math.Max(maxLng, *device.Lng)
-		minLat = math.Min(minLat, *device.Lat)
-		maxLat = math.Max(maxLat, *device.Lat)
-	}
-	if minLng == math.MaxFloat64 || minLat == math.MaxFloat64 {
-		return nil
-	}
+		latDelta := gridInfluenceRadiusKm / kilometersPerDegreeLat
+		lngDelta := longitudeDeltaForRadiusKm(*device.Lat, gridInfluenceRadiusKm)
+		startLngIndex := int(math.Floor((*device.Lng - lngDelta) / resolution))
+		endLngIndex := int(math.Floor((*device.Lng + lngDelta) / resolution))
+		startLatIndex := int(math.Floor((*device.Lat - latDelta) / resolution))
+		endLatIndex := int(math.Floor((*device.Lat + latDelta) / resolution))
 
-	startLngIndex := int(math.Floor(minLng / resolution))
-	endLngIndex := int(math.Floor(maxLng / resolution))
-	startLatIndex := int(math.Floor(minLat / resolution))
-	endLatIndex := int(math.Floor(maxLat / resolution))
-
-	centers := make([]gridCenter, 0, (endLngIndex-startLngIndex+1)*(endLatIndex-startLatIndex+1))
-	for lngIndex := startLngIndex; lngIndex <= endLngIndex; lngIndex++ {
-		for latIndex := startLatIndex; latIndex <= endLatIndex; latIndex++ {
-			centers = append(centers, gridCenter{
-				lng: roundCoordinate((float64(lngIndex) + 0.5) * resolution),
-				lat: roundCoordinate((float64(latIndex) + 0.5) * resolution),
-			})
+		for lngIndex := startLngIndex; lngIndex <= endLngIndex; lngIndex++ {
+			for latIndex := startLatIndex; latIndex <= endLatIndex; latIndex++ {
+				center := gridCenter{
+					lng: roundCoordinate((float64(lngIndex) + 0.5) * resolution),
+					lat: roundCoordinate((float64(latIndex) + 0.5) * resolution),
+				}
+				if coordinateDistanceKm(center.lng, center.lat, *device.Lng, *device.Lat) > gridInfluenceRadiusKm+distanceEpsilonKm {
+					continue
+				}
+				key := [2]int{lngIndex, latIndex}
+				if _, exists := seen[key]; exists {
+					continue
+				}
+				seen[key] = struct{}{}
+				centers = append(centers, center)
+			}
 		}
 	}
+	sort.Slice(centers, func(i, j int) bool {
+		if centers[i].lng == centers[j].lng {
+			return centers[i].lat < centers[j].lat
+		}
+		return centers[i].lng < centers[j].lng
+	})
 	return centers
 }
 
@@ -287,7 +348,10 @@ func interpolateGridForecast(center gridCenter, devicePredicts []gridDevicePredi
 		if !ok || devicePredict.device.Lng == nil || devicePredict.device.Lat == nil {
 			continue
 		}
-		distance := coordinateDistance(center.lng, center.lat, *devicePredict.device.Lng, *devicePredict.device.Lat)
+		distance := coordinateDistanceKm(center.lng, center.lat, *devicePredict.device.Lng, *devicePredict.device.Lat)
+		if distance > gridInfluenceRadiusKm+distanceEpsilonKm {
+			continue
+		}
 		weight := distanceWeight(distance)
 		candidates = append(candidates, gridWeightedDevice{
 			device:   devicePredict.device,
@@ -296,17 +360,16 @@ func interpolateGridForecast(center gridCenter, devicePredicts []gridDevicePredi
 			weight:   weight,
 		})
 	}
-	if len(candidates) < gridNearestDeviceCount {
+	if len(candidates) == 0 {
 		return nil
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].distance < candidates[j].distance
 	})
-	nearest := candidates[:gridNearestDeviceCount]
 
 	var totalWeight float64
-	for _, candidate := range nearest {
+	for _, candidate := range candidates {
 		totalWeight += candidate.weight
 	}
 	if totalWeight <= 0 {
@@ -314,8 +377,8 @@ func interpolateGridForecast(center gridCenter, devicePredicts []gridDevicePredi
 	}
 
 	var predictRain float64
-	devices := make([]domains.GridDiffDeviceWeight, 0, gridNearestDeviceCount)
-	for _, candidate := range nearest {
+	devices := make([]domains.GridDiffDeviceWeight, 0, len(candidates))
+	for _, candidate := range candidates {
 		normalizedWeight := candidate.weight / totalWeight
 		predictRain += candidate.predict.PredictRain * normalizedWeight
 		devices = append(devices, domains.GridDiffDeviceWeight{
@@ -328,7 +391,7 @@ func interpolateGridForecast(center gridCenter, devicePredicts []gridDevicePredi
 
 	return &domains.GridDiffForecast{
 		ForecastHour:     forecastHour,
-		Time:             nearest[0].predict.Time,
+		Time:             candidates[0].predict.Time,
 		PredictRain:      predictRain,
 		PredictRainLevel: utils.GetLevel(predictRain),
 		Devices:          devices,
@@ -354,23 +417,44 @@ func parseGridSncodes(value string) []string {
 }
 
 func normalizeGridMinDevice(minDevice int) int {
-	if minDevice < gridNearestDeviceCount {
-		return gridNearestDeviceCount
+	if minDevice < gridMinimumDeviceCount {
+		return gridMinimumDeviceCount
 	}
 	return minDevice
 }
 
-func coordinateDistance(lng1, lat1, lng2, lat2 float64) float64 {
-	lngDelta := lng1 - lng2
-	latDelta := lat1 - lat2
-	return math.Sqrt(lngDelta*lngDelta + latDelta*latDelta)
+func coordinateDistanceKm(lng1, lat1, lng2, lat2 float64) float64 {
+	lat1Rad := degreesToRadians(lat1)
+	lat2Rad := degreesToRadians(lat2)
+	latDelta := degreesToRadians(lat2 - lat1)
+	lngDelta := degreesToRadians(lng2 - lng1)
+
+	a := math.Sin(latDelta/2)*math.Sin(latDelta/2) +
+		math.Cos(lat1Rad)*math.Cos(lat2Rad)*math.Sin(lngDelta/2)*math.Sin(lngDelta/2)
+	if a > 1 {
+		a = 1
+	}
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthRadiusKm * c
 }
 
 func distanceWeight(distance float64) float64 {
-	if distance <= 0 {
+	if distance <= distanceEpsilonKm {
 		return 1e12
 	}
 	return 1 / distance
+}
+
+func longitudeDeltaForRadiusKm(lat float64, radiusKm float64) float64 {
+	cosLat := math.Cos(degreesToRadians(lat))
+	if math.Abs(cosLat) < 1e-6 {
+		return 180
+	}
+	return radiusKm / (kilometersPerDegreeLat * math.Abs(cosLat))
+}
+
+func degreesToRadians(value float64) float64 {
+	return value * math.Pi / 180
 }
 
 func roundCoordinate(value float64) float64 {

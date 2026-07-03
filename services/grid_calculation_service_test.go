@@ -1,7 +1,10 @@
 package services
 
 import (
+	"bytes"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,9 +17,12 @@ import (
 
 func TestGridCalculationServiceCalculateEnabledGrids(t *testing.T) {
 	oldDB := global.NAV_DB
+	oldNCOutputDir := gridDiffNCOutputDir
 	defer func() {
 		global.NAV_DB = oldDB
+		gridDiffNCOutputDir = oldNCOutputDir
 	}()
+	gridDiffNCOutputDir = t.TempDir()
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -86,8 +92,8 @@ func TestGridCalculationServiceCalculateEnabledGrids(t *testing.T) {
 	if point.Forecast1H == nil || point.Forecast12H == nil || point.Forecast24H == nil {
 		t.Fatalf("expected 1/12/24 hour forecasts: %#v", point)
 	}
-	if len(point.Forecast1H.Devices) != 3 {
-		t.Fatalf("expected three weighted devices, got %d", len(point.Forecast1H.Devices))
+	if len(point.Forecast1H.Devices) == 0 {
+		t.Fatal("expected weighted devices")
 	}
 	if point.Forecast1H.PredictRain <= 0 {
 		t.Fatalf("unexpected forecast rain: %v", point.Forecast1H.PredictRain)
@@ -99,6 +105,43 @@ func TestGridCalculationServiceCalculateEnabledGrids(t *testing.T) {
 	}
 	if task.PointCount != len(results[0].Points) {
 		t.Fatalf("unexpected task point count: got %d, want %d", task.PointCount, len(results[0].Points))
+	}
+	if task.GridIdentifier != "ceshi" {
+		t.Fatalf("unexpected task grid identifier: %v", task.GridIdentifier)
+	}
+	if task.CoordinateSystem != domains.DefaultGridCoordinateSystem {
+		t.Fatalf("unexpected task coordinate system: %v", task.CoordinateSystem)
+	}
+	if task.NcStatus != domains.GridDiffTaskNcStatusSuccess {
+		t.Fatalf("unexpected nc status: %v", task.NcStatus)
+	}
+	expectedNCFileName := "shouming_hourly_precipitation_forecast_ceshi_wgs84_" + formatGridNCBaseTime(baseTime) + ".nc"
+	if task.NcFileName != expectedNCFileName {
+		t.Fatalf("unexpected nc file name: got %s, want %s", task.NcFileName, expectedNCFileName)
+	}
+	if task.NcFileSize <= 0 {
+		t.Fatalf("unexpected nc file size: %d", task.NcFileSize)
+	}
+	if len(task.NcChecksum) != 64 {
+		t.Fatalf("unexpected nc checksum: %s", task.NcChecksum)
+	}
+	ncData, err := os.ReadFile(task.NcFilePath)
+	if err != nil {
+		t.Fatalf("read nc file: %v", err)
+	}
+	if int64(len(ncData)) != task.NcFileSize {
+		t.Fatalf("unexpected nc file size on disk: got %d, want %d", len(ncData), task.NcFileSize)
+	}
+	if !bytes.HasPrefix(ncData, []byte{'C', 'D', 'F', 1}) {
+		t.Fatalf("unexpected nc magic: %v", ncData[:4])
+	}
+	for _, variableName := range []string{"longitude", "latitude", "forecast_1h", "forecast_12h", "forecast_24h"} {
+		if !bytes.Contains(ncData, []byte(variableName)) {
+			t.Fatalf("nc file should contain variable %s", variableName)
+		}
+	}
+	if filepath.Base(task.NcFilePath) != expectedNCFileName {
+		t.Fatalf("unexpected nc file path: %s", task.NcFilePath)
 	}
 	var pointCount int64
 	if err := db.Model(&domains.GridDiffPoint{}).Where("task_guid = ?", task.Guid).Count(&pointCount).Error; err != nil {
@@ -196,28 +239,142 @@ func TestGridCalculationServiceDoesNotFallbackToPreviousBaseTime(t *testing.T) {
 	}
 }
 
-func TestInterpolateGridForecastUsesNearestThreeDistanceWeights(t *testing.T) {
+func TestGridCalculationServiceSkipsBelowMinimumDevices(t *testing.T) {
+	oldDB := global.NAV_DB
+	defer func() {
+		global.NAV_DB = oldDB
+	}()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	if err := db.AutoMigrate(&domains.Grid{}, &domains.Device{}, &domains.Predict{}, &domains.GridDiffTask{}, &domains.GridDiffPoint{}); err != nil {
+		t.Fatalf("migrate tables: %v", err)
+	}
+	global.NAV_DB = db
+
+	latA, lngA := 30.000, 114.000
+	latB, lngB := 30.000, 114.010
+	for _, device := range []domains.Device{
+		{Sncode: "A", Lat: &latA, Lng: &lngA},
+		{Sncode: "B", Lat: &latB, Lng: &lngB},
+	} {
+		if err := db.Create(&device).Error; err != nil {
+			t.Fatalf("create device: %v", err)
+		}
+	}
+
+	if err := db.Create(&domains.Grid{
+		Name:       "设备不足格网",
+		Sncodes:    "A,B",
+		Resolution: 0.01,
+		Status:     domains.GridStatusEnabled,
+	}).Error; err != nil {
+		t.Fatalf("create grid: %v", err)
+	}
+
+	now := time.Date(2026, 7, 1, 10, 30, 0, 0, time.Local)
+	baseTime := alignGridBaseTime(now)
+	hourMillis := int64(time.Hour / time.Millisecond)
+	for _, sncode := range []string{"A", "B"} {
+		for _, forecastHour := range []int{1, 12, 24} {
+			if err := db.Create(&domains.Predict{
+				Sncode:      sncode,
+				Type:        forecastHour,
+				BaseTime:    baseTime,
+				Time:        baseTime + int64(forecastHour)*hourMillis,
+				PredictRain: 10,
+			}).Error; err != nil {
+				t.Fatalf("create prediction: %v", err)
+			}
+		}
+	}
+
+	results, err := GridCalculationService{}.CalculateEnabledGrids(now)
+	if err != nil {
+		t.Fatalf("calculate grids: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("less than three devices should not calculate grid: %#v", results)
+	}
+
+	var taskCount int64
+	if err := db.Model(&domains.GridDiffTask{}).Count(&taskCount).Error; err != nil {
+		t.Fatalf("count grid diff tasks: %v", err)
+	}
+	if taskCount != 0 {
+		t.Fatalf("less than three devices should not save task, got %d", taskCount)
+	}
+}
+
+func TestInterpolateGridForecastUsesFiveKilometerCircleWeights(t *testing.T) {
 	center := gridCenter{lng: 0, lat: 0}
 	devices := []gridDevicePredict{
-		testGridDevicePredict("A", 1, 0, 10),
-		testGridDevicePredict("B", 2, 0, 20),
-		testGridDevicePredict("C", 3, 0, 30),
-		testGridDevicePredict("D", 100, 0, 1000),
+		testGridDevicePredict("A", 0.01, 0, 10),
+		testGridDevicePredict("B", 0.02, 0, 20),
+		testGridDevicePredict("C", 0.10, 0, 1000),
 	}
 
 	forecast := interpolateGridForecast(center, devices, 1)
 	if forecast == nil {
 		t.Fatal("expected forecast")
 	}
+	if len(forecast.Devices) != 2 {
+		t.Fatalf("expected two devices inside 5km circle, got %d", len(forecast.Devices))
+	}
 
-	weights := []float64{1, 0.5, 1.0 / 3.0}
-	expected := (10*weights[0] + 20*weights[1] + 30*weights[2]) / (weights[0] + weights[1] + weights[2])
+	weightA := distanceWeight(coordinateDistanceKm(center.lng, center.lat, 0.01, 0))
+	weightB := distanceWeight(coordinateDistanceKm(center.lng, center.lat, 0.02, 0))
+	expected := (10*weightA + 20*weightB) / (weightA + weightB)
 	if math.Abs(forecast.PredictRain-expected) > 1e-9 {
 		t.Fatalf("unexpected forecast rain: got %v, want %v", forecast.PredictRain, expected)
 	}
 	for _, device := range forecast.Devices {
-		if device.Sncode == "D" {
-			t.Fatal("far device should not be used")
+		if device.Sncode == "C" {
+			t.Fatal("device outside 5km circle should not be used")
+		}
+	}
+}
+
+func TestInterpolateGridForecastUsesSingleDeviceValueInNonOverlapArea(t *testing.T) {
+	center := gridCenter{lng: 0, lat: 0}
+	devices := []gridDevicePredict{
+		testGridDevicePredict("A", 0.03, 0, 10),
+		testGridDevicePredict("B", 0.10, 0, 1000),
+	}
+
+	forecast := interpolateGridForecast(center, devices, 1)
+	if forecast == nil {
+		t.Fatal("expected forecast")
+	}
+	if len(forecast.Devices) != 1 {
+		t.Fatalf("expected one device inside non-overlap area, got %d", len(forecast.Devices))
+	}
+	if forecast.Devices[0].Sncode != "A" {
+		t.Fatalf("unexpected device: %s", forecast.Devices[0].Sncode)
+	}
+	if math.Abs(forecast.PredictRain-10) > 1e-9 {
+		t.Fatalf("single device area should use station value, got %v", forecast.PredictRain)
+	}
+	if math.Abs(forecast.Devices[0].Weight-1) > 1e-9 {
+		t.Fatalf("single device weight should be 1, got %v", forecast.Devices[0].Weight)
+	}
+}
+
+func TestBuildGridCentersUsesFiveKilometerDeviceCircles(t *testing.T) {
+	lat, lng := 0.0, 0.0
+	centers := buildGridCenters([]domains.Device{
+		{Sncode: "A", Lat: &lat, Lng: &lng},
+	}, 0.01)
+
+	if len(centers) == 0 {
+		t.Fatal("expected centers inside device circle")
+	}
+	for _, center := range centers {
+		distance := coordinateDistanceKm(center.lng, center.lat, lng, lat)
+		if distance > gridInfluenceRadiusKm+distanceEpsilonKm {
+			t.Fatalf("center outside 5km circle: center=%#v distance=%v", center, distance)
 		}
 	}
 }

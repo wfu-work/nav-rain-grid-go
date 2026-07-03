@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"nav-rain-grid-go/domains"
+	"strings"
 
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/services"
@@ -29,6 +30,22 @@ func (s ConfigService) GetVersion() string {
 }
 
 func (s ConfigService) SaveOrUpdate(config domains.Config) error {
+	config.Key = strings.TrimSpace(config.Key)
+	if config.Key != "" {
+		var existing domains.Config
+		err := global.NAV_DB.Where("`key` = ?", config.Key).First(&existing).Error
+		if err == nil {
+			config.Guid = existing.Guid
+			return global.NAV_DB.Model(&domains.Config{}).Where("guid = ?", config.Guid).
+				Select("*").
+				Updates(config).Error
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return s.Create(config)
+	}
+
 	bean, err := s.GetConfig()
 	if err != nil {
 		return err

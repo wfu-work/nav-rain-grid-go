@@ -68,6 +68,12 @@ func (s GridDiffTaskService) buildGridDiffTaskQuery(params map[string]string) *g
 	if gridName := strings.TrimSpace(params["gridName"]); gridName != "" {
 		db = db.Where("grid_name like ?", "%"+gridName+"%")
 	}
+	if gridIdentifier := strings.TrimSpace(params["gridIdentifier"]); gridIdentifier != "" {
+		db = db.Where("grid_identifier = ?", gridIdentifier)
+	}
+	if coordinateSystem := strings.TrimSpace(params["coordinateSystem"]); coordinateSystem != "" {
+		db = db.Where("coordinate_system = ?", coordinateSystem)
+	}
 	if baseTime := strings.TrimSpace(params["baseTime"]); baseTime != "" {
 		if value, err := strconv.ParseInt(baseTime, 10, 64); err == nil {
 			db = db.Where("base_time = ?", value)
@@ -78,9 +84,14 @@ func (s GridDiffTaskService) buildGridDiffTaskQuery(params map[string]string) *g
 			db = db.Where("status = ?", value)
 		}
 	}
+	if ncStatus := strings.TrimSpace(params["ncStatus"]); ncStatus != "" {
+		if value, err := strconv.Atoi(ncStatus); err == nil {
+			db = db.Where("nc_status = ?", value)
+		}
+	}
 	if content := strings.TrimSpace(params["content"]); content != "" {
 		like := "%" + content + "%"
-		db = db.Where("grid_name like ? or error_msg like ?", like, like)
+		db = db.Where("grid_name like ? or grid_identifier like ? or coordinate_system like ? or nc_file_name like ? or error_msg like ? or nc_error_msg like ?", like, like, like, like, like, like)
 	}
 	return db
 }
@@ -107,6 +118,10 @@ func gridDiffTaskOrderColumn(field string) (string, bool) {
 		return "grid_guid", true
 	case "grid_name":
 		return "grid_name", true
+	case "grid_identifier":
+		return "grid_identifier", true
+	case "coordinate_system":
+		return "coordinate_system", true
 	case "base_time":
 		return "base_time", true
 	case "resolution":
@@ -115,6 +130,10 @@ func gridDiffTaskOrderColumn(field string) (string, bool) {
 		return "point_count", true
 	case "status":
 		return "status", true
+	case "nc_status":
+		return "nc_status", true
+	case "nc_file_size":
+		return "nc_file_size", true
 	case "create_time":
 		return "create_time", true
 	case "update_time":

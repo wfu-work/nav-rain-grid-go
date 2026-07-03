@@ -1,11 +1,13 @@
 package domains
 
 type GridDiffResult struct {
-	GridGuid   string                `json:"gridGuid"`
-	GridName   string                `json:"gridName"`
-	BaseTime   int64                 `json:"baseTime"`
-	Resolution float64               `json:"resolution"`
-	Points     []GridDiffPointResult `json:"points"`
+	GridGuid         string                `json:"gridGuid"`
+	GridName         string                `json:"gridName"`
+	GridIdentifier   string                `json:"gridIdentifier"`
+	CoordinateSystem string                `json:"coordinateSystem"`
+	BaseTime         int64                 `json:"baseTime"`
+	Resolution       float64               `json:"resolution"`
+	Points           []GridDiffPointResult `json:"points"`
 }
 
 type GridDiffPointResult struct {

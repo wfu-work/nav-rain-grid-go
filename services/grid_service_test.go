@@ -37,6 +37,15 @@ func TestGridSaveOrUpdateDefaultsResolution(t *testing.T) {
 	if created.Resolution != domains.DefaultGridResolution {
 		t.Fatalf("unexpected created resolution: %v", created.Resolution)
 	}
+	if created.MinDevice != 3 {
+		t.Fatalf("unexpected created min device: %v", created.MinDevice)
+	}
+	if created.CoordinateSystem != domains.DefaultGridCoordinateSystem {
+		t.Fatalf("unexpected created coordinate system: %v", created.CoordinateSystem)
+	}
+	if created.GridIdentifier != "ceshi" {
+		t.Fatalf("unexpected created grid identifier: %v", created.GridIdentifier)
+	}
 
 	update := domains.Grid{Name: "测试格网更新"}
 	update.Guid = created.Guid
@@ -61,5 +70,17 @@ func TestGridSaveOrUpdateDefaultsResolution(t *testing.T) {
 	}
 	if twoKilometer.Resolution != 0.02 {
 		t.Fatalf("unexpected two kilometer resolution: %v", twoKilometer.Resolution)
+	}
+}
+
+func TestNormalizeGridIdentifierFromChineseGridName(t *testing.T) {
+	if got := normalizeGridIdentifier("", "寿命格网"); got != "shouming" {
+		t.Fatalf("unexpected grid identifier: %v", got)
+	}
+	if got := normalizeGridIdentifier("NS Grid", "寿命格网"); got != "ns_grid" {
+		t.Fatalf("unexpected explicit grid identifier: %v", got)
+	}
+	if got := normalizeGridCoordinateSystem("84"); got != domains.DefaultGridCoordinateSystem {
+		t.Fatalf("unexpected coordinate system: %v", got)
 	}
 }
