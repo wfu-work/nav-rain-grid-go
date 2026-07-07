@@ -15,7 +15,7 @@ import (
 
 const (
 	gridMinimumDeviceCount = 3
-	gridInfluenceRadiusKm  = 5.0
+	gridIDWPower           = 2.0
 	earthRadiusKm          = 6371.0088
 	kilometersPerDegreeLat = 111.32
 	distanceEpsilonKm      = 1e-9
@@ -69,6 +69,7 @@ func (s GridCalculationService) calculateGrid(grid domains.Grid, now time.Time) 
 	resolution := normalizeGridResolution(grid.Resolution)
 	sncodes := parseGridSncodes(grid.Sncodes)
 	minDevice := normalizeGridMinDevice(grid.MinDevice)
+	influenceRadiusKm := normalizeGridMinDistance(grid.MinDistance)
 	if len(sncodes) < minDevice {
 		return domains.GridDiffResult{}, false, nil
 	}
@@ -95,7 +96,7 @@ func (s GridCalculationService) calculateGrid(grid domains.Grid, now time.Time) 
 		})
 	}
 
-	centers := buildGridCenters(devices, resolution)
+	centers := buildGridCenters(devices, resolution, influenceRadiusKm)
 	if len(centers) == 0 {
 		return domains.GridDiffResult{}, false, nil
 	}
@@ -114,9 +115,9 @@ func (s GridCalculationService) calculateGrid(grid domains.Grid, now time.Time) 
 			CenterLng: center.lng,
 			CenterLat: center.lat,
 		}
-		point.Forecast1H = interpolateGridForecast(center, devicePredicts, 1)
-		point.Forecast12H = interpolateGridForecast(center, devicePredicts, 12)
-		point.Forecast24H = interpolateGridForecast(center, devicePredicts, 24)
+		point.Forecast1H = interpolateGridForecast(center, devicePredicts, 1, influenceRadiusKm)
+		point.Forecast12H = interpolateGridForecast(center, devicePredicts, 12, influenceRadiusKm)
+		point.Forecast24H = interpolateGridForecast(center, devicePredicts, 24, influenceRadiusKm)
 		if point.Forecast1H != nil && point.Forecast12H != nil && point.Forecast24H != nil {
 			result.Points = append(result.Points, point)
 		}
@@ -298,8 +299,9 @@ type gridCenter struct {
 	lat float64
 }
 
-func buildGridCenters(devices []domains.Device, resolution float64) []gridCenter {
+func buildGridCenters(devices []domains.Device, resolution float64, influenceRadiusKm float64) []gridCenter {
 	resolution = normalizeGridResolution(resolution)
+	influenceRadiusKm = normalizeGridMinDistance(influenceRadiusKm)
 	seen := make(map[[2]int]struct{})
 	centers := make([]gridCenter, 0)
 
@@ -307,8 +309,8 @@ func buildGridCenters(devices []domains.Device, resolution float64) []gridCenter
 		if device.Lng == nil || device.Lat == nil {
 			continue
 		}
-		latDelta := gridInfluenceRadiusKm / kilometersPerDegreeLat
-		lngDelta := longitudeDeltaForRadiusKm(*device.Lat, gridInfluenceRadiusKm)
+		latDelta := influenceRadiusKm / kilometersPerDegreeLat
+		lngDelta := longitudeDeltaForRadiusKm(*device.Lat, influenceRadiusKm)
 		startLngIndex := int(math.Floor((*device.Lng - lngDelta) / resolution))
 		endLngIndex := int(math.Floor((*device.Lng + lngDelta) / resolution))
 		startLatIndex := int(math.Floor((*device.Lat - latDelta) / resolution))
@@ -320,7 +322,7 @@ func buildGridCenters(devices []domains.Device, resolution float64) []gridCenter
 					lng: roundCoordinate((float64(lngIndex) + 0.5) * resolution),
 					lat: roundCoordinate((float64(latIndex) + 0.5) * resolution),
 				}
-				if coordinateDistanceKm(center.lng, center.lat, *device.Lng, *device.Lat) > gridInfluenceRadiusKm+distanceEpsilonKm {
+				if coordinateDistanceKm(center.lng, center.lat, *device.Lng, *device.Lat) > influenceRadiusKm+distanceEpsilonKm {
 					continue
 				}
 				key := [2]int{lngIndex, latIndex}
@@ -341,7 +343,8 @@ func buildGridCenters(devices []domains.Device, resolution float64) []gridCenter
 	return centers
 }
 
-func interpolateGridForecast(center gridCenter, devicePredicts []gridDevicePredict, forecastHour int) *domains.GridDiffForecast {
+func interpolateGridForecast(center gridCenter, devicePredicts []gridDevicePredict, forecastHour int, influenceRadiusKm float64) *domains.GridDiffForecast {
+	influenceRadiusKm = normalizeGridMinDistance(influenceRadiusKm)
 	candidates := make([]gridWeightedDevice, 0, len(devicePredicts))
 	for _, devicePredict := range devicePredicts {
 		prediction, ok := devicePredict.predicted[forecastHour]
@@ -349,7 +352,7 @@ func interpolateGridForecast(center gridCenter, devicePredicts []gridDevicePredi
 			continue
 		}
 		distance := coordinateDistanceKm(center.lng, center.lat, *devicePredict.device.Lng, *devicePredict.device.Lat)
-		if distance > gridInfluenceRadiusKm+distanceEpsilonKm {
+		if distance > influenceRadiusKm+distanceEpsilonKm {
 			continue
 		}
 		weight := distanceWeight(distance)
@@ -367,6 +370,35 @@ func interpolateGridForecast(center gridCenter, devicePredicts []gridDevicePredi
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].distance < candidates[j].distance
 	})
+
+	if candidates[0].distance <= distanceEpsilonKm {
+		exactDevices := make([]domains.GridDiffDeviceWeight, 0, len(candidates))
+		var predictRain float64
+		for _, candidate := range candidates {
+			if candidate.distance > distanceEpsilonKm {
+				break
+			}
+			exactDevices = append(exactDevices, domains.GridDiffDeviceWeight{
+				Sncode:      candidate.device.Sncode,
+				Distance:    candidate.distance,
+				Weight:      1,
+				PredictRain: candidate.predict.PredictRain,
+			})
+			predictRain += candidate.predict.PredictRain
+		}
+		normalizedWeight := 1 / float64(len(exactDevices))
+		for index := range exactDevices {
+			exactDevices[index].Weight = normalizedWeight
+		}
+		predictRain *= normalizedWeight
+		return &domains.GridDiffForecast{
+			ForecastHour:     forecastHour,
+			Time:             candidates[0].predict.Time,
+			PredictRain:      predictRain,
+			PredictRainLevel: utils.GetLevel(predictRain),
+			Devices:          exactDevices,
+		}
+	}
 
 	var totalWeight float64
 	for _, candidate := range candidates {
@@ -440,9 +472,9 @@ func coordinateDistanceKm(lng1, lat1, lng2, lat2 float64) float64 {
 
 func distanceWeight(distance float64) float64 {
 	if distance <= distanceEpsilonKm {
-		return 1e12
+		return math.Inf(1)
 	}
-	return 1 / distance
+	return 1 / math.Pow(distance, gridIDWPower)
 }
 
 func longitudeDeltaForRadiusKm(lat float64, radiusKm float64) float64 {

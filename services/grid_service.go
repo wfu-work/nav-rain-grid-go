@@ -33,6 +33,7 @@ func (s GridService) SaveOrUpdate(entity domains.Grid) error {
 	}
 	entity.Resolution = normalizeGridResolution(entity.Resolution)
 	entity.MinDevice = normalizeGridMinDevice(entity.MinDevice)
+	entity.MinDistance = normalizeGridMinDistance(entity.MinDistance)
 	entity.CoordinateSystem = normalizeGridCoordinateSystem(entity.CoordinateSystem)
 	entity.GridIdentifier = normalizeGridIdentifier(entity.GridIdentifier, entity.Name)
 
@@ -71,6 +72,13 @@ func normalizeGridResolution(resolution float64) float64 {
 		return domains.DefaultGridResolution
 	}
 	return resolution
+}
+
+func normalizeGridMinDistance(minDistance float64) float64 {
+	if minDistance <= 0 {
+		return domains.DefaultGridMinDistance
+	}
+	return minDistance
 }
 
 func normalizeGridCoordinateSystem(coordinateSystem string) string {

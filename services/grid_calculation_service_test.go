@@ -308,7 +308,7 @@ func TestGridCalculationServiceSkipsBelowMinimumDevices(t *testing.T) {
 	}
 }
 
-func TestInterpolateGridForecastUsesFiveKilometerCircleWeights(t *testing.T) {
+func TestInterpolateGridForecastUsesConfiguredRadiusAndIDWWeights(t *testing.T) {
 	center := gridCenter{lng: 0, lat: 0}
 	devices := []gridDevicePredict{
 		testGridDevicePredict("A", 0.01, 0, 10),
@@ -316,12 +316,12 @@ func TestInterpolateGridForecastUsesFiveKilometerCircleWeights(t *testing.T) {
 		testGridDevicePredict("C", 0.10, 0, 1000),
 	}
 
-	forecast := interpolateGridForecast(center, devices, 1)
+	forecast := interpolateGridForecast(center, devices, 1, domains.DefaultGridMinDistance)
 	if forecast == nil {
 		t.Fatal("expected forecast")
 	}
 	if len(forecast.Devices) != 2 {
-		t.Fatalf("expected two devices inside 5km circle, got %d", len(forecast.Devices))
+		t.Fatalf("expected two devices inside configured circle, got %d", len(forecast.Devices))
 	}
 
 	weightA := distanceWeight(coordinateDistanceKm(center.lng, center.lat, 0.01, 0))
@@ -332,7 +332,7 @@ func TestInterpolateGridForecastUsesFiveKilometerCircleWeights(t *testing.T) {
 	}
 	for _, device := range forecast.Devices {
 		if device.Sncode == "C" {
-			t.Fatal("device outside 5km circle should not be used")
+			t.Fatal("device outside configured circle should not be used")
 		}
 	}
 }
@@ -344,7 +344,7 @@ func TestInterpolateGridForecastUsesSingleDeviceValueInNonOverlapArea(t *testing
 		testGridDevicePredict("B", 0.10, 0, 1000),
 	}
 
-	forecast := interpolateGridForecast(center, devices, 1)
+	forecast := interpolateGridForecast(center, devices, 1, domains.DefaultGridMinDistance)
 	if forecast == nil {
 		t.Fatal("expected forecast")
 	}
@@ -362,19 +362,42 @@ func TestInterpolateGridForecastUsesSingleDeviceValueInNonOverlapArea(t *testing
 	}
 }
 
-func TestBuildGridCentersUsesFiveKilometerDeviceCircles(t *testing.T) {
+func TestInterpolateGridForecastUsesExactDeviceValue(t *testing.T) {
+	center := gridCenter{lng: 0, lat: 0}
+	devices := []gridDevicePredict{
+		testGridDevicePredict("A", 0, 0, 12),
+		testGridDevicePredict("B", 0.01, 0, 99),
+	}
+
+	forecast := interpolateGridForecast(center, devices, 1, domains.DefaultGridMinDistance)
+	if forecast == nil {
+		t.Fatal("expected forecast")
+	}
+	if len(forecast.Devices) != 1 {
+		t.Fatalf("expected only exact device, got %d", len(forecast.Devices))
+	}
+	if forecast.Devices[0].Sncode != "A" {
+		t.Fatalf("unexpected exact device: %s", forecast.Devices[0].Sncode)
+	}
+	if math.Abs(forecast.PredictRain-12) > 1e-9 {
+		t.Fatalf("exact device value should be used, got %v", forecast.PredictRain)
+	}
+}
+
+func TestBuildGridCentersUsesConfiguredDeviceCircles(t *testing.T) {
 	lat, lng := 0.0, 0.0
+	influenceRadiusKm := 3.0
 	centers := buildGridCenters([]domains.Device{
 		{Sncode: "A", Lat: &lat, Lng: &lng},
-	}, 0.01)
+	}, 0.01, influenceRadiusKm)
 
 	if len(centers) == 0 {
 		t.Fatal("expected centers inside device circle")
 	}
 	for _, center := range centers {
 		distance := coordinateDistanceKm(center.lng, center.lat, lng, lat)
-		if distance > gridInfluenceRadiusKm+distanceEpsilonKm {
-			t.Fatalf("center outside 5km circle: center=%#v distance=%v", center, distance)
+		if distance > influenceRadiusKm+distanceEpsilonKm {
+			t.Fatalf("center outside configured circle: center=%#v distance=%v", center, distance)
 		}
 	}
 }

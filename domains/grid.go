@@ -5,6 +5,7 @@ import "github.com/wfu-work/nav-common-go-lib/domains"
 const (
 	DefaultGridResolution       = 0.01
 	DefaultGridCoordinateSystem = "wgs84"
+	DefaultGridMinDistance      = 5.0
 )
 
 const (
@@ -20,7 +21,7 @@ type Grid struct {
 	Sncodes          string  `json:"sncodes" gorm:"comment:设备号多选用英文逗号分割"`
 	Resolution       float64 `json:"resolution" gorm:"default:0.01;comment:格网分辨率，默认0.01度（约1公里）"`
 	MinDevice        int     `json:"minDevice" gorm:"default:3;comment:最少设备，默认3台"`
-	MinDistance      float64 `json:"minDistance" gorm:"default:3;comment:最小距离，默认3公里"`
+	MinDistance      float64 `json:"minDistance" gorm:"default:5;comment:最小距离，默认5公里"`
 	Status           int     `json:"status" gorm:"comment:启用/禁用"`
 }
 

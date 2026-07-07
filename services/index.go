@@ -16,6 +16,7 @@ type ServiceGroup struct {
 	GridDiffPointService
 	PushRecordService
 	SystemMonitorService
+	VersionReleaseService
 }
 
 type HasBaseData interface {

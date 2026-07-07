@@ -77,10 +77,10 @@ flowchart LR
 - 参与计算的设备 `sncode` 列表
 - 格网分辨率，单位为度，默认 `0.01`（约 1 公里），`0.02` 表示约 2 公里
 - 最少参与设备数
-- 最小设备距离
+- 站点影响距离 `minDistance`，单位公里，默认 `5`
 - 启用/禁用状态
 
-系统按小时读取预测数据，并基于设备坐标和预测降雨值进行格网差分，计算每个格网中心坐标上的降雨值。
+系统按小时读取预测数据，并基于设备坐标和预测降雨值进行 IDW 格网差分，计算每个格网中心坐标上的降雨值。
 
 输出目标：
 
@@ -148,6 +148,9 @@ mqtt:
   enable: true
   host: ""
   port: 1883
+
+rain:
+  version-path: ./data/version
 ```
 
 说明：
@@ -156,6 +159,7 @@ mqtt:
 - API 前缀：`/api`
 - MQTT 服务默认端口：`1883`
 - SQLite 数据目录：`./data/`
+- 版本发布文件目录：`./data/version`
 
 ## 运行
 
@@ -181,6 +185,24 @@ make all
 
 ```bash
 make clean
+```
+
+## 远程安装
+
+`deploy/install-server.sh` 可在 Linux systemd 主机上一键安装或升级服务。脚本会根据目标机器架构拉取版本发布中的安装包，默认安装到 `/opt/nav-rain-grid`，服务名为 `nav-rain-grid`。首次安装和重复执行升级使用同一条命令，不需要 token。
+
+通过版本发布接口安装最新版本：
+
+```bash
+curl -fsSL https://example.com/install-server.sh | sudo sh -s -- \
+  --api-base https://example.com/api
+```
+
+直接指定二进制下载地址：
+
+```bash
+curl -fsSL https://example.com/install-server.sh | sudo sh -s -- \
+  --download-url https://example.com/api/version-release/GUID/download
 ```
 
 ## 主要接口
@@ -218,6 +240,21 @@ GET    /api/predict/list
 GET    /api/predict/query
 GET    /api/predict/last
 GET    /api/predict/export
+```
+
+### 版本发布
+
+```text
+POST   /api/version-release
+PUT    /api/version-release/:guid
+POST   /api/version-release/upload
+POST   /api/version-release/:guid/upload
+DELETE /api/version-release/:guid
+GET    /api/version-release/latest
+GET    /api/version-release/:guid/download
+GET    /api/version-release/:guid
+GET    /api/version-release/list
+GET    /api/version-release/query
 ```
 
 ## MQTT 数据约定
@@ -267,7 +304,11 @@ DEV001
 
 ### Grid
 
-格网配置，包含设备集合、分辨率、最少设备数、最小距离和状态等。分辨率使用 `float64` 度数，默认 `0.01`（约 1 公里），`0.02` 表示约 2 公里。
+格网配置，包含设备集合、分辨率、最少设备数、站点影响距离和状态等。分辨率使用 `float64` 度数，默认 `0.01`（约 1 公里），`0.02` 表示约 2 公里；`minDistance` 使用公里，默认 `5`。
+
+### VersionRelease
+
+版本发布记录，包含版本号、应用名称、平台、架构、发布说明、版本文件路径、文件名、文件大小、SHA256 校验值、发布状态和发布时间。上传文件保存到 `rain.version-path` 配置目录。
 
 ## 开发约定
 

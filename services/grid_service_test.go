@@ -40,6 +40,9 @@ func TestGridSaveOrUpdateDefaultsResolution(t *testing.T) {
 	if created.MinDevice != 3 {
 		t.Fatalf("unexpected created min device: %v", created.MinDevice)
 	}
+	if created.MinDistance != domains.DefaultGridMinDistance {
+		t.Fatalf("unexpected created min distance: %v", created.MinDistance)
+	}
 	if created.CoordinateSystem != domains.DefaultGridCoordinateSystem {
 		t.Fatalf("unexpected created coordinate system: %v", created.CoordinateSystem)
 	}
@@ -59,6 +62,9 @@ func TestGridSaveOrUpdateDefaultsResolution(t *testing.T) {
 	}
 	if updated.Resolution != domains.DefaultGridResolution {
 		t.Fatalf("unexpected updated resolution: %v", updated.Resolution)
+	}
+	if updated.MinDistance != domains.DefaultGridMinDistance {
+		t.Fatalf("unexpected updated min distance: %v", updated.MinDistance)
 	}
 
 	if err := service.SaveOrUpdate(domains.Grid{Name: "两公里格网", Resolution: 0.02}); err != nil {

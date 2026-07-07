@@ -13,12 +13,16 @@ import (
 
 type AppConfig struct {
 	MqttConfig MqttConfig `mapstructure:"mqtt" json:"mqtt" yaml:"mqtt"`
+	RainConfig RainConfig `mapstructure:"rain" json:"rain" yaml:"rain"`
 }
 
 var App = AppConfig{
 	MqttConfig: MqttConfig{
 		Enable: true,
 		Port:   DefaultMqttPort,
+	},
+	RainConfig: RainConfig{
+		VersionPath: DefaultVersionPath,
 	},
 }
 

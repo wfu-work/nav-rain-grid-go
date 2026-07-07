@@ -17,17 +17,19 @@ type ApiGroup struct {
 	GridDiffPointApi
 	PushRecordApi
 	SystemMonitorApi
+	VersionReleaseApi
 }
 
 var (
-	configService        = services.ServiceGroupApp.ConfigService
-	predictService       = services.ServiceGroupApp.PredictService
-	deviceService        = services.ServiceGroupApp.DeviceService
-	gridService          = services.ServiceGroupApp.GridService
-	gridDiffTaskService  = services.ServiceGroupApp.GridDiffTaskService
-	gridDiffPointService = services.ServiceGroupApp.GridDiffPointService
-	pushRecordService    = services.ServiceGroupApp.PushRecordService
-	systemMonitorService = services.ServiceGroupApp.SystemMonitorService
+	configService         = services.ServiceGroupApp.ConfigService
+	predictService        = services.ServiceGroupApp.PredictService
+	deviceService         = services.ServiceGroupApp.DeviceService
+	gridService           = services.ServiceGroupApp.GridService
+	gridDiffTaskService   = services.ServiceGroupApp.GridDiffTaskService
+	gridDiffPointService  = services.ServiceGroupApp.GridDiffPointService
+	pushRecordService     = services.ServiceGroupApp.PushRecordService
+	systemMonitorService  = services.ServiceGroupApp.SystemMonitorService
+	versionReleaseService = services.ServiceGroupApp.VersionReleaseService
 )
 
 func queryParams(c *gin.Context) map[string]string {

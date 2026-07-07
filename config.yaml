@@ -22,3 +22,5 @@ mqtt:
   enable: true
   host: ""
   port: 1883
+rain:
+  version-path: ./data/version

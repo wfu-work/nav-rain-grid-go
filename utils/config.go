@@ -129,6 +129,7 @@ func (m DefaultConfigManager) MaterializeDefaultConfig(baseDir string) ([]byte, 
 	setConfigPath(cfg, []string{"local", "cache-path"}, filepath.Join(dataDir, "cache.json"))
 	setConfigPath(cfg, []string{"local", "ip2geo-path"}, filepath.Join(dataDir, "ip2geo"))
 	setConfigPath(cfg, []string{"backup", "path"}, filepath.Join(dataDir, "backups"))
+	setConfigPath(cfg, []string{"rain", "version-path"}, filepath.Join(dataDir, "version"))
 	setConfigPath(cfg, []string{"zap", "director"}, filepath.Join(baseDir, "logback"))
 
 	out, err := yaml.Marshal(cfg)
@@ -157,6 +158,7 @@ func (m DefaultConfigManager) EnsurePortableConfig(configPath string) error {
 	changed = upgradeLegacyConfigPath(cfg, []string{"local", "cache-path"}, filepath.Join(dataDir, "cache.json")) || changed
 	changed = upgradeLegacyConfigPath(cfg, []string{"local", "ip2geo-path"}, filepath.Join(dataDir, "ip2geo")) || changed
 	changed = upgradeLegacyConfigPath(cfg, []string{"backup", "path"}, filepath.Join(dataDir, "backups")) || changed
+	changed = upgradeLegacyConfigPath(cfg, []string{"rain", "version-path"}, filepath.Join(dataDir, "version")) || changed
 	changed = upgradeLegacyConfigPath(cfg, []string{"zap", "director"}, filepath.Join(baseDir, "logback")) || changed
 	if !changed {
 		return nil
@@ -208,7 +210,7 @@ func isLegacyRelativePath(path string) bool {
 	path = strings.TrimSpace(filepath.ToSlash(path))
 	path = strings.TrimSuffix(path, "/")
 	switch path {
-	case "./data", "data", "./data/oss", "data/oss", "./data/cache.json", "data/cache.json", "./data/ip2geo", "data/ip2geo", "./data/backups", "data/backups", "./data/navmesh", "data/navmesh", "logback", "./logback":
+	case "./data", "data", "./data/oss", "data/oss", "./data/cache.json", "data/cache.json", "./data/ip2geo", "data/ip2geo", "./data/backups", "data/backups", "./data/version", "data/version", "./data/navmesh", "data/navmesh", "logback", "./logback":
 		return true
 	default:
 		return false
