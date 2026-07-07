@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"nav-rain-grid-go/domains"
+	"runtime"
 	"strings"
 
 	"github.com/wfu-work/nav-common-go-lib/global"
@@ -17,9 +18,14 @@ type ConfigService struct {
 
 var ConfigServiceApp = new(ConfigService)
 
-const (
-	Version = "1.0.0"
-)
+var Version = "V1.0.0"
+
+type CurrentVersionInfo struct {
+	Version      string `json:"version"`
+	AppName      string `json:"appName"`
+	Platform     string `json:"platform"`
+	Architecture string `json:"architecture"`
+}
 
 func init() {
 	log.Println("当前软件版本：" + Version)
@@ -27,6 +33,15 @@ func init() {
 
 func (s ConfigService) GetVersion() string {
 	return Version
+}
+
+func (s ConfigService) CurrentVersion() CurrentVersionInfo {
+	return CurrentVersionInfo{
+		Version:      Version,
+		AppName:      currentAppName(),
+		Platform:     runtime.GOOS,
+		Architecture: runtime.GOARCH,
+	}
 }
 
 func (s ConfigService) SaveOrUpdate(config domains.Config) error {
@@ -65,4 +80,11 @@ func (s ConfigService) GetConfig() (*domains.Config, error) {
 		return nil, nil
 	}
 	return bean, err
+}
+
+func currentAppName() string {
+	if global.NAV_CONFIG.System.AppName != "" {
+		return global.NAV_CONFIG.System.AppName
+	}
+	return "nav-rain-grid"
 }

@@ -46,19 +46,19 @@ $(PLATFORMS):
 		output="$${output}.exe"; \
 	fi; \
 	echo "✅Building for $$os/$$arch, output: $$output"; \
-	GOOS=$$os GOARCH=$$arch CGO_ENABLED=1 go build -ldflags "-X main.version=$(VERSION)" -o $$output main.go
+	GOOS=$$os GOARCH=$$arch CGO_ENABLED=1 go build -ldflags "-X nav-rain-grid-go/services.Version=$(VERSION)" -o $$output main.go
 
 win:
     output="$(BIN_DIR)/$(VERSION)/$(APP_NAME)-$${os}-$${arch}"; \
     output="$(output).exe"; \
     echo "✅Building for windows/amd64, output: $(output)"; \
-    GOOS=$$os GOARCH=$$arch CGO_ENABLED=1 go build -ldflags "-X main.version=$(VERSION)" -o $$output main.go
+    GOOS=$$os GOARCH=$$arch CGO_ENABLED=1 go build -ldflags "-X nav-rain-grid-go/services.Version=$(VERSION)" -o $$output main.go
 
 linux:
     output="$(BIN_DIR)/$(VERSION)/$(APP_NAME)-$${os}-$${arch}"; \
     output="$(output)"; \
     echo "✅Building for linux/amd64, output: $(output)"; \
-    GOOS=$$os GOARCH=$$arch CGO_ENABLED=1 go build -ldflags "-X main.version=$(VERSION)" -o $$output main.go
+    GOOS=$$os GOARCH=$$arch CGO_ENABLED=1 go build -ldflags "-X nav-rain-grid-go/services.Version=$(VERSION)" -o $$output main.go
 
 clean:
 	rm -rf $(BIN_DIR)

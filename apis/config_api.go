@@ -78,3 +78,15 @@ func (i ConfigApi) GetVersion(c *gin.Context) {
 	t := configService.GetVersion()
 	response.Ok(t, c)
 }
+
+// CurrentVersion 获取当前软件版本信息
+// @Summary 获取当前软件版本信息
+// @Description 获取当前软件版本信息
+// @Tags 边缘计算模块
+// @Accept json
+// @Produce json
+// @Success 200 {object} response.Response{data=services.CurrentVersionInfo,msg=string}
+// @Router /configs/current-version [get]
+func (i ConfigApi) CurrentVersion(c *gin.Context) {
+	response.Ok(configService.CurrentVersion(), c)
+}

@@ -14,5 +14,7 @@ func (s *ConfigRouter) InitConfigRouter(Router *gin.RouterGroup, publicGroup *gi
 	}
 	{
 		publicRouter.GET("", configApi.GetConfig) // 查询高级配置
+		publicRouter.GET("version", configApi.GetVersion)
+		publicRouter.GET("current-version", configApi.CurrentVersion)
 	}
 }
